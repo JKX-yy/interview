@@ -1343,6 +1343,213 @@ Drive_vtable = {
 
 
 
+### 10. 虚函数表和虚函数表指针
+
+虚函数表和虚函数表指针的创建时机：
+
+虚函数表：
+
+​	内容在编译期生成    
+
+​        全局数据区的只读数据段.rodata 
+
+​	虚函数表存放虚函数的地址的数组
+
+​	编译期发现virtual关键字
+
+虚函数表指针：
+
+​	当为类构建对象的时候（构造函数/默认构造函数），编译器会把vptr给类的对象，存放在前八字节中。
+
+​	如果类没有构造函数 编译器自动为类生成默认构造函数，目的是为类对象初始化vptr
+
+​	继承下虚函数表指针的赋值过程：vptr先=基类虚函数表地址（基类构造函数），然后vptr=子类的虚函数表地址（子类构造函数）
+
+![image-20250715114306844](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715114306844.png)
+
+
+
+背景： 用于实现多态  （静态多态 形参返回值不一样  函数名一样  在编译的时候确定）
+
+ （动态多态 虚函数 继承的时候可以重写基类的虚函数 运行时才确定）
+
+虚函数表创建时机：
+
+1.什么时候生成的？（编译的时候生成的  virtual关键字修饰的函数）
+
+2.存在哪里？  编译为可执行程序（存在磁盘里面） 运行时（内存）![img](file:///C:\Users\jkx-pig\AppData\Local\Temp\ksohtml30668\wps1.jpg)![img](file:///C:\Users\jkx-pig\AppData\Local\Temp\ksohtml30668\wps2.jpg)![img](file:///C:\Users\jkx-pig\AppData\Local\Temp\ksohtml30668\wps3.jpg)![img](file:///C:\Users\jkx-pig\AppData\Local\Temp\ksohtml30668\wps4.jpg)![img](file:///C:\Users\jkx-pig\AppData\Local\Temp\ksohtml30668\wps5.jpg)![img](file:///C:\Users\jkx-pig\AppData\Local\Temp\ksohtml30668\wps6.jpg)![img](file:///C:\Users\jkx-pig\AppData\Local\Temp\ksohtml30668\wps7.jpg)
+
+
+
+虚函数表指针的创建时机：类对象构造的时候 vptr ，把类的虚函数表地址赋值给vptr(类的对象的前八个字节指向虚函数表的地址)
+
+![img](file:///C:\Users\jkx-pig\AppData\Local\Temp\ksohtml30668\wps8.jpg) 
+
+继承
+
+B继承a的时候，B自己没有虚函数此时会在磁盘的只读代码段复制一个A的虚函数表。如果B自己写了一个虚函数func和A一样，是接着复制A的虚函数表并把对应的虚函数项的地址指向自己的实现吗。还是重新创建一个自己的虚函数表。、
+
+![img](file:///C:\Users\jkx-pig\AppData\Local\Temp\ksohtml30668\wps9.jpg)
+
+（3）继承情况下  虚函数表指针的赋值过程？
+
+![img](file:///C:\Users\jkx-pig\AppData\Local\Temp\ksohtml30668\wps10.jpg) 
+
+
+
+
+
+### 11. 虚析构函数的作用
+
+✅ 结论（通俗一点讲）：
+
+> **只要你希望子类能“改写”（override）基类的某个函数，并在运行时“正确地调用它”——就要在基类中给这个函数加上 `virtual`。**
+
+
+
+解决什么问题：基类对象指针=子类对象指针（在调用析构时 子类对象的析构函数得不到调用）
+
+为什么这么设计：设计某个类的时候不一定是基类，如果该类是基类，我们应该手动将基类的析构函数设计为虚析构。
+
+设置虚析构函数是有代价的，编译器会为类生成虚函数表，每个对象都有虚函数表指针，增大了资源消耗
+
+![image-20250715115204088](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715115204088.png)![image-20250715115504216](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715115504216.png)
+
+作用：继承下 为了使子类的析构函数能正常调用，需要基类的析构设置为虚析构。
+
+​	![image-20250715120043340](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715120043340.png)
+
+当然可以，咱们来**通俗+形象地解释一下**这句代码在干嘛：
+
+
+
+
+
+
+
+
+
+🌰 先来个比喻：
+
+把 `Base*` 看成是一个**“动物”类型的指针**，你有很多动物：狗、猫、鸟……
+
+你写了个基类 `Animal`，然后让 `Dog` 和 `Cat` 都继承它：
+
+```c++
+cppCopyEditclass Animal {
+public:
+    virtual void speak() { std::cout << "Animal叫" << std::endl; }
+    virtual ~Animal() {}
+};
+
+class Dog : public Animal {
+public:
+    void speak() override { std::cout << "狗汪汪" << std::endl; }
+};
+
+class Cat : public Animal {
+public:
+    void speak() override { std::cout << "猫喵喵" << std::endl; }
+};
+```
+
+🧠 正常你会这样写：
+
+```
+cppCopyEditDog* d = new Dog();
+Cat* c = new Cat();
+d->speak();  // 狗汪汪
+c->speak();  // 猫喵喵
+```
+
+这当然没问题，但想象你有很多动物，比如 100 种，要一个一个写太麻烦了！
+
+🎯 现在的代码是这么做的：
+
+```
+cppCopyEditstd::vector<Animal*> zoo;        // 创建一个“动物园”
+zoo.push_back(new Dog());        // 加一只狗进去（自动转成 Animal*）
+zoo.push_back(new Cat());        // 加一只猫进去（自动转成 Animal*）
+
+for (Animal* a : zoo)
+    a->speak();   // 调用多态：自动根据实际类型说话
+```
+
+🟢 输出是：
+
+```
+CopyEdit狗汪汪
+猫喵喵
+```
+
+🧠 回到你原来的代码
+
+```
+cppCopyEditstd::vector<Base*> objs;
+objs.push_back(new Drive());
+objs.push_back(new AnotherDrive());
+```
+
+翻译成人话就是：
+
+> 创建一个“基类指针的容器”（像动物园），然后往里面丢进了两个子类对象（Drive 和 AnotherDrive）。虽然你用的是 `Base*` 类型，但程序**能自动识别每个对象的实际类型**，这就是**多态的魔力**。
+
+🧹 最后别忘了清理！
+
+```
+cppCopyEditfor (Base* p : objs)
+    delete p;  // 如果Base的析构函数不是virtual，就不会清除掉子类的内容
+```
+
+所以：
+
+✅ **总结一句话通俗版：**
+
+> 你用 `Base*` 把子类对象统一装起来，就像用“动物指针”统一装猫狗狮子，然后靠虚函数和多态让它们各自正确地“发出自己的声音”，方便管理也灵活扩展。
+
+
+
+
+
+### 12. 动态库和静态库的区别
+
+1. 生成方式：
+
+2. 连接方式：
+
+   1. 静态链接  ：把静态库编译进目标文件
+
+   2. 动态链接 ：没有把动态库编译进文件
+
+      ​		 程序运行时动态加载 
+
+      ​		只做语法检查
+
+3. 空间占用：
+
+   1. 静态库占用空间大，存在多个副本
+   2. 动态库占用空间小，只存在一个副本共享
+
+4. 使用方式：
+
+   1. 静态库所在程序是直接运行
+   2. 动态库所在程序是动态加载的，   程序环境需要制定动态库查找路径   LD_LIBBRARY_PATH
+
+5. 执行速度：
+
+   1. 静态库执行速度快
+   2. 动态库执行速度慢
+
+6. 库文件发生变更
+
+   1. 接口改变（参数个数  类型等等） 都需要重新编译
+   2. 接口实现改变 ： 静态库和.c文件都需重新编译        只需重新编译动态库
+
+![image-20250715144322206](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715144322206.png)
+
+
+
+#### Cmake中的动态库和静态库
 
 
 
@@ -1354,6 +1561,1925 @@ Drive_vtable = {
 
 
 
+### 13.  Cmake  语法  
+
+
+
+在build  目录  cmake   然后make 
+
+  #### 01.  set()   file()/aux_source_directory  add_excutable()
+
+基础
+
+构建一个 build目录  进入到buile目录，执行cmake .. *(这个..路径是CMakeLists.txt文件所在的目录)*
+
+![image-20250715145635290](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715145635290.png)
+
+```cmake
+CMakeLists.txt
+#项目名
+project(test)
+#指定Cmake的最低版本
+cmake_minimum_required(VERSION 3.0)
+
+set(CMAKE_CXX_STANDARD 11)
+
+#设置变量
+set(SOR a.cpp  b.cpp  c.cpp)
+#文件太多 不能一个一个都写出来  通过两种文件搜索的方式
+aux_source_directory(${PROJECT_SOURCE_DIR} SOR) #PROJECT_SOURCE_DIR是cmake .. 的地址，搜索所有的.cpp .c .h 不能递归
+
+file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp) # 在目录下递归搜索，  CMAKE_CURRENT_SOURCE_DIR（搜索指定的.cpp 递归）是CMakeList.txt 文件所在目录
+
+#设置输出路径 宏定义
+set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}) 
+add_executable(test &{SRC})
+
+
+```
+
+✅ 总结一句话：
+
+> CMake 不需要 `.h` 文件去参与编译，只要 `.cpp` 文件引用到了正确的 `.h`，编译器就能自动找到并使用。你没写 `.h` 也能编译成功，是完全合理的。
+
+
+
+
+
+#### 02  include   src    build  
+
+源文件和头文件分开了   要告诉编译器头文件所在的位置  要不找不到  
+
+add_drictories(&{CMAKE_CURRENT_SOURCE_DIR}/include)
+
+![image-20250715150543720](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715150543720.png)
+
+```cmake
+ project(test)
+cmake_minimum_requiredVERSION 3.0()
+set(CMAKE_CXX_STANDARD  11)
+
+file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/sec/*.cpp)
+# 设置头文件搜索路径.h
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)  #等同于给编译器加了参数：-I/path/to/your/project/include
+#添加库  static  share
+#add_library(calc SHARED ${SRC})
+
+set(EXECUTABLE  ${CMAKE_CURRENT_SOURCE_DIR} )
+add_executable(text &{SRC})
+
+```
+
+
+
+```cmake
+
+# cmake 时构建一个build目录（保存cmake生成的中间产物） cmake ..(这个..路径是CMakeLists.txt文件所在的目录)
+#项目名 不写可不可以
+project(test)
+#指定cmake版本  高于3.0
+cmake_minimum_required(VERSION 3.0)
+
+#设置变量
+#set(SOR add.cpp div.cpp mult.cpp sub.cpp main.cpp)
+#文件搜索的两种方式
+#aux_source_directory(${PROJECT_SOURCE_DIR} SOR)  #   PROJECT_SOURCE_DIR（搜索所有的.cpp .c .h文件 不能递归）是cmake 后的地址
+
+#[[注意  1.file只是说把路径列表给SOR   但是并没有给编译器，.h需要给编译器编译器才知道去哪里寻找
+file(GLOB SOR ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+file(GLOB SOR_H ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h) 
+set(SOR ${SOR} ${SOR_H})  # 合并列表
+虽然你把头文件路径放入了 SOR 变量
+但 CMake 不会自动 把这些路径加入编译器的头文件搜索路径
+编译器仍然不知道去哪里找 head.h
+
+]]
+file(GLOB SOR ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)  #   CMAKE_CURRENT_SOURCE_DIR（搜索指定的.cpp 递归）是CMakeList.txt 文件所在目录
+# 设置头文件搜索路径
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include) 
+
+
+#设置输出路径 宏定义
+set(EXECUTABLE_OUTPUT_PATH  ${PROJECT_SOURCE_DIR})  #PROJECT_SOURCE_DIR宏是cmake 后面跟的路径 
+#生成可执行文件
+add_executable(test ${SOR})
+
+```
+
+
+
+#### 03 静态库  动态库  
+
+
+
+总体流程  一样的
+
+add_library()  //生成库
+
+link_directories()  //告诉库的位置
+
+add_executable() //生成可执行文件
+
+target_link_libraries(test  cale) //  告诉某个可执行文件链接哪个库
+
+
+
+```cmake
+project(test)
+    
+cmake_minimum_required(VERSION 3.0)
+set(CMAKE_CXX_STANDARD 11)
+    
+    
+file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+#库的输出路径
+#  静态库和动态库都可以使用 LIBRARY_OUTPUT_PATH 针对动态库具有可执行权限还可以使用EXECUTABLE_OUTPUT_PATH
+set(LIBRARY_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+
+#添加静态库 
+add_library(cale_a STATIC ${SRC})
+
+#添加动态库
+add_library(cale_s SHARED ${SRC})
+
+
+link_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib1)# 告诉静态库的文件位置
+add_executable(test1 ${SRC})  
+target_link_libraries(test1 cale_a)  #必须在add_execurable后面是给某个“已经存在的目标”（target）设置链接库属性。
+
+# 有了库要发布给使用者  动态库和静态库都是二进制文件 .cpp是文本的格式  所以发布的时候还要有include中的.h文件
+
+#测试创建出来的静态库和动态库能不能用  需要先发布 库和头文件
+# #动态库的链接
+link_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib2)
+add_executable(test2 ${SRC})
+target_link_libraries(test2  cale) #这里给出动态库的链接  TARGET
+    
+```
+
+是的，✅ **`target_link_libraries(test1 cale_a)` 必须在 `add_executable(test1 ...)` 之后执行**，这是 **CMake 的语法规定**，不是建议，而是硬性规则。
+
+📌 原因解释（一定要在后面）
+
+CMake 的设计逻辑是：
+
+> `target_link_libraries()` 是给某个“已经存在的目标”（target）设置链接库属性。
+
+所以你必须 **先创建这个目标**（不管是可执行文件 `add_executable()`，还是库 `add_library()`），CMake 才允许你对它设置链接信息。
+
+#### 05  message
+
+打印消息的
+
+```cmake
+#打印消息
+cmake_minimum_required(VERSION 3.0)
+project(message)
+set(CMAKE_CXX_STANDARD 11)
+
+
+file(GLOB  SRC ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+message( "xxxxxxxxxxxxxx")
+link_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib2)
+message(STATUS "11111xxxxxxxxxxxxxx")
+add_executable(test ${SRC})
+#输出变量
+message(${SRC})
+message(STATUS "11111xxxxxxxxxxxxxx")
+```
+
+
+
+#### 06 list 
+
+```
+#[[字符串的操作    
+list（APPEND src  item1  item2  ... )   
+list(REMOVE_ITEM src  item1  item2  ...)   
+获取长度list(LENGTH src  output_var)  
+获取元素list(GET SRC -1 output_var)
+                list(JOIN src  sep  output_var)
+                list(find  src  item  output_var)
+                list(insert src index item1 item2 ...)
+插入头           list(prepend src item1 item2 ...)
+弹出最后一个元素  list(POP_BACK src output_var)
+弹出头           list(POP_FRONT src output_var)
+移除列表中重复元素 list(REMOVE_DUPLICATES src)
+将指定索引删除    list(REMOVE_AT src index)
+列表反转         list(REVERSE src)
+列表排序         list(SORT src comparator)
+]]
+#list的其他操作   
+```
+
+
+
+```cmake
+cmake_minimum_required(VERSION 3.0)
+project(test)
+set(CMAKE_CXX_STANDARD 11)
+
+message("===========配置开始============")
+file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+file(GLOB APP ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+#删除绝对路径
+list(REMOVE_ITEM SRC ${APP}) 
+message("SRC:${SRC}")
+message("APP:${APP}")
+message("===========配置完成============")
+
+#创建动态库
+message("===========创建动态库============")
+set(LIBRARY_OUTPUT_PATH  ${CMAKE_CURRENT_SOURCE_DIR}/lib_so)
+add_library(calc SHARED ${SRC})
+message("===========创建动态库完成============")
+
+link_directories(${LIBRARY_OUTPUT_PATH})
+set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+add_executable(test ${APP})
+target_link_libraries(test calc)
+
+```
+
+#### 07 宏定义  
+
+*#进行宏定义  自定义 帮我们把程序执行期间需要的宏定义出来  add_definitions(-D宏)*
+
+很好！我们来详细讲清楚 CMake 中的：
+
+> ✅ `add_definitions(-DDEBUG)` 的含义、作用、使用时机，以及现代替代方式。
+
+✅ 一句话说明：
+
+```
+cmake
+
+
+CopyEdit
+add_definitions(-DDEBUG)
+```
+
+表示：
+
+> **给所有后续的源文件添加一个预处理宏定义 `DEBUG`，等效于在编译时加上 `-DDEBUG`。**
+
+✅ 它等价于手动 g++ 命令的写法：
+
+```
+bash
+
+
+CopyEdit
+g++ -DDEBUG main.cpp -o main
+```
+
+这样在 C++ 源文件里你就可以用：
+
+```
+cppCopyEdit#ifdef DEBUG
+    std::cout << "Debugging info..." << std::endl;
+#endif
+```
+
+```Cmake
+add_difinition(-DDEBUG)
+
+cmake_minimum_required(VERSION 3.0)
+project(test)
+set(CMAKE_CXX_STANDARD 11)
+
+message("===========配置开始============")
+file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+file(GLOB APP ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+#删除绝对路径
+list(REMOVE_ITEM SRC ${APP}) 
+message("SRC:${SRC}")
+message("APP:${APP}")
+message("===========配置完成============")
+
+#创建动态库
+message("===========创建动态库============")
+set(LIBRARY_OUTPUT_PATH  ${CMAKE_CURRENT_SOURCE_DIR}/lib_so)
+add_library(calc SHARED ${SRC})
+message("===========创建动态库完成============")
+
+link_directories(${LIBRARY_OUTPUT_PATH})
+set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+add_executable(test ${APP})
+target_link_libraries(test calc)
+
+```
+
+#### 08 父子关系的复杂目录
+
+*[add_subdirectory(lib)  父子关系的复杂目录  子目录也包含cmakelists.txt* 
+
+*子目录可以使用父目录的变量（全局变量）   父目录不可以使用子目录（局部）* 
+
+*]]*
+
+```cmake
+add_definitions(-DDEBUG)
+cmake_minimum_required(VERSION 3.0)
+project(test)
+set(CMAKE_CXX_STANDARD 11)
+
+message("===========配置开始============")
+file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+file(GLOB APP ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+#删除绝对路径
+list(REMOVE_ITEM SRC ${APP}) 
+message("SRC:${SRC}")
+message("APP:${APP}")
+message("===========配置完成============")
+
+#创建动态库
+message("===========创建动态库============")
+set(LIBRARY_OUTPUT_PATH  ${CMAKE_CURRENT_SOURCE_DIR}/lib_so)
+add_library(calc SHARED ${SRC})
+message("===========创建动态库完成============")
+
+link_directories(${LIBRARY_OUTPUT_PATH})
+set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+add_executable(test ${APP})
+target_link_libraries(test calc)
+
+```
+
+
+
+
+
+很好，这次我们讲 CMake 中的一个重要命令：
+
+> ✅ `add_subdirectory` —— 用于**将子目录加入当前构建系统**，支持递归构建多个模块或组件。
+
+
+
+
+
+✅ 一句话理解
+
+```
+cmake
+
+
+CopyEdit
+add_subdirectory(src)
+```
+
+表示：
+
+> “请进入 `src/` 目录，加载它的 `CMakeLists.txt` 并把它当作当前项目的一部分来一起构建。”
+
+📘 它的作用：
+
+| 功能                         | 说明                                           |
+| ---------------------------- | ---------------------------------------------- |
+| 🔨 **模块化管理源码**         | 每个模块或组件独立放在子目录中，便于维护和分工 |
+| 🔁 **递归构建**               | 会递归调用子目录下的 `CMakeLists.txt` 文件     |
+| 🔗 **支持 target 共享与依赖** | 主目录可以链接子目录中生成的库或目标           |
+
+✅ 示例场景
+
+你的工程结构如下：
+
+```
+csharpCopyEditproject/
+├── CMakeLists.txt          # 顶层
+├── main.cpp
+├── math/
+│   ├── CMakeLists.txt      # 子目录
+│   ├── add.cpp
+│   └── add.h
+```
+
+顶层 `CMakeLists.txt`
+
+```
+cmakeCopyEditcmake_minimum_required(VERSION 3.10)
+project(MyProject)
+
+add_subdirectory(math)  # 加入 math 子目录
+
+add_executable(main main.cpp)
+target_link_libraries(main mathlib)  # 链接子目录里的库
+```
+
+子目录 `math/CMakeLists.txt`
+
+```
+cmakeCopyEditadd_library(mathlib add.cpp)
+target_include_directories(mathlib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+```
+
+main.cpp`
+
+```
+cppCopyEdit#include "add.h"
+#include <iostream>
+
+int main() {
+    std::cout << add(2, 3) << std::endl;
+    return 0;
+}
+```
+
+✅ 执行结果：
+
+- CMake 会递归进入 `math/` 目录
+- 编译 `mathlib` 静态库
+- 主程序 `main` 链接这个库
+- 一起构建完成，目标可用
+- 
+
+
+
+### 14 .STL 容器  
+
+https://www.nowcoder.com/discuss/724532234882940928
+
+嵌入式八股2】C++：STL容算法
+
+黑马程序员 PDF    
+
+[]: 
+
+[]()
+
+#### 1. STL常见容器及其内部实现的数据结构
+
+序号 名称 描述 存储结构 常用方法和操作
+
+ 二、哪些 STL 容器的操作**必须**或**推荐**使用迭代器？
+
+
+
+✅string的操作是基于下标的迭代器也可以，但是严格
+
+来说string并不属于容器，一般容器来都是以迭代器
+
+为基准访问元素的 inset   erase
+
+
+
+| 容器类型                               | 是否支持随机访问 | 是否推荐使用迭代器    | 原因                                        |
+| -------------------------------------- | ---------------- | --------------------- | ------------------------------------------- |
+| `std::vector`                          | ✅ 是             | ❌（可以用下标）       | 因为它像数组一样                            |
+| `std::string`                          | ✅ 是             | ❌（常用下标）         | 同上                                        |
+| `std::deque`                           | ✅ 是             | ❌（下标或迭代器皆可） | 支持随机访问                                |
+| `std::list`                            | ❌ 否             | ✅ 必须用迭代器        | 不支持 `operator[]`                         |
+| `std::forward_list`                    | ❌ 否             | ✅ 必须用迭代器        | 只能前向遍历                                |
+| `std::set` / `std::multiset`           | ❌ 否             | ✅ 必须用迭代器        | 无下标访问                                  |
+| `std::map` / `std::multimap`           | ❌ 否             | ✅ 必须用迭代器        | 无下标访问，`[]`只能用于 `map<K, V>` 的写入 |
+| `std::unordered_map` / `unordered_set` | ❌ 否             | ✅（多使用迭代器）     | 不支持有序位置                              |
+
+
+
+非常棒的问题！
+
+你问的是：
+
+> `std::string::insert` 为什么可以用下标而不是像 `vector` 一样必须用迭代器？是不是其实也可以用迭代器？
+
+答案是：
+
+> ✅ **`std::string::insert` 既可以用下标，也可以用迭代器！**
+
+🔹 一、`std::string::insert` 的两种接口形式
+
+`std::string` 是 STL 中少数提供**下标式插入**和**迭代器式插入**两种方式的容器。
+
+✅ 形式 1：下标插入
+
+```
+cppCopyEditstd::string s = "hello";
+s.insert(2, "XX");  // 插入到第2个位置，变成 heXXllo
+```
+
+✅ 形式 2：迭代器插入（像 vector 一样）
+
+```
+cppCopyEditstd::string s = "hello";
+s.insert(s.begin() + 2, 'X');  // 插在第2个位置
+```
+
+或者插入一段：
+
+```
+cppCopyEditstd::string s = "hello";
+std::string t = "XX";
+s.insert(s.begin() + 2, t.begin(), t.end());  // heXXllo
+```
+
+🔹 二、为什么 `string` 提供下标接口，而 `vector` 没有？
+
+✅ 原因 1：字符串操作“以位置为核心”
+
+- 字符串 API 传统上都围绕“第几个字符”展开，比如：
+  - `insert(pos, str)`
+  - `substr(pos, len)`
+  - `replace(pos, len, str)`
+- 所以提供下标版本，**符合直觉、常用、简洁**。
+
+✅ 原因 2：`string` 是专门为字符处理而优化的类，不是纯通用容器
+
+- 它是 STL 的 `basic_string<char>`，但也被“当作字符数组”来对待；
+- 提供了额外的便捷接口，是**特例**，不是一般 STL 容器都这样。
+
+🔹 三、对比：`string` vs `vector` 的 insert 接口
+
+| 容器          | 支持下标插入 | 支持迭代器插入 | 原因说明                             |
+| ------------- | ------------ | -------------- | ------------------------------------ |
+| `std::vector` | ❌ 不支持     | ✅ 支持         | 泛型容器，不提供按下标插入的语义     |
+| `std::string` | ✅ 支持       | ✅ 支持         | 因为它是字符串，有历史习惯和特殊处理 |
+
+
+
+
+
+| 序号 | 名称           | 描述                   | 存储结构                       | 常用方法和操作                                               |
+| ---- | -------------- | ---------------------- | ------------------------------ | ------------------------------------------------------------ |
+| 0    | string         |                        | char*                          | 增：s.insert, s.append   删：s.erase   改：是。replace(),s.assing(),查：find()   ,其他s.substr(),s.size(),at(),[] |
+| 1    | vector         | 动态分配的数组         | 顺序数组（array）              | `v.push_back()`, `v.pop_back()`, `v.insert()`, `v.erase()`, `v.capacity()`, `v.size()`, `v.at(idx)`, `v.front()`, `v.back()  ,v.reserve(),v.swap() ,v.resize()，v.assgin(),v.empty()，` |
+| 5    | deque          | 双端队列,双端数组      | 分段连续（多个 `vector` 连续） | `d.push_back()`, `d.push_front()`, `d.pop_back()`, `d.pop_front()`, `d.insert()`, `d.erase()  ,d.assgin()/d.empty()/d.size()/d.resize()/容器没有容量的概念，。at(),[],/ d.front()/d.back()/sort()` |
+| *    | ****           | ***                    | ****                           | **下面是非随机访问的容器  不可以随即插入删除**               |
+| 2    | list           | 双向链表               | 离散                           | `lt.push_back()`, `lt.push_front()`, `lt.insert()`, `lt.erase()`, `lt.sort()`, `lt.merge()`, `lt.splice()  ，assgin()  swap()  size()  empty  resize(),  remove(),clear(),reverse(), ` |
+| 3    | stack          | 栈                     | 用 `list` 或 `deque` 实现0     | `push()`, `pop()`, `top()  empty(),size(),`，                |
+| 4    | queue          | 队列(不允许有遍历行为) | 用 `list` 或 `deque` 实现      | `push()`, `pop()`, `front()`, `back()  empty()  size()`  ，  |
+| 6    | priority_queue | 优先级队列             | `vector`                       | `push()`, `pop()`, `top()`                                   |
+| ***  | *******        | ********               | ******                         | **********************没有push  pop                          |
+| 7    | set            | 集合（有序不重复）     | 红黑树（弱平衡二叉搜索树）     | `insert()  clear() ` , `erase()`, `find()`, `count()`, `clear()  size()  empty() swap() ` |
+| 8    | multiset       | 集合（有序可重复）     | 红黑树                         | `insert()`, `erase()`, `find()`, `count()`, `clear()`        |
+| 9    | unordered_set  | 集合（无序不重复）     | 哈希表                         | `insert()`, `erase()`, `find()`, `count()`, `clear()`        |
+| 10   | map            | 键值对（有序不重复）   | 红黑树                         | `insert() clear()` , `erase()`, `find()`, `count()`, `clear() size() empty() swap() ` |
+| 11   | multimap       | 键值对（有序可重复）   | 红黑树                         | `insert()`, `erase()`, `find()`, `count()`, `clear()`        |
+| 12   | unordered_map  | 键值对（无序不重复）   | 哈希表                         | `insert()`, `erase()`, `find()`, `count()`, `clear()`        |
+| 13   | hash_map       | 哈希表（类似 `map`）   | 哈希表                         | `insert()`, `erase()`, `find()`, `count()`, `clear()`        |
+
+#### 2. deque底层数据结构
+
+![image-20250716100529563](assets/image-20250716100529563.png)
+
+`deque` 底层实现通常是分段连续的内存结构，即由多个 `vector` 组成，允许高效的从两端进行元素的插入和删除。
+
+✅ **deque****与****vector****区别：**
+
+vector对于头部的插入删除效率低，数据量越大，效率越低
+
+deque相对而言，对头部的插入删除速度回比vector快
+
+vector访问元素时的速度会比deque快,这和两者内部实现有关
+
+
+
+
+
+✅ deque内部工作原理:
+
+deque内部有个**中控器**，维护每段缓冲区中的内容，缓冲区中存放真实数据
+
+中控器维护的是每个缓冲区的地址，使得使用deque时像一片连续的内存空间
+
+
+
+![image-20250716100442831](assets/image-20250716100442831.png)
+
+#### list  容器
+
+**功能：**将数据进行链式存储
+
+**链表**（list）是一种物理存储单元上非连续的存储结构，数据元素的逻辑顺序是通过链表中的指针链接实现的
+
+结点的组成：一个是存储数据元素的**数据域**，另一个是存储下一个结点地址的**指针域**
+
+![image-20250716102138570](assets/image-20250716102138570.png)
+
+由于链表的存储方式并不是连续的内存空间，因此链表list中的迭代器只支持前移和后移，属于**双向迭代器**
+
+✅ list的优点：
+
+采用动态存储分配，不会造成内存浪费和溢出
+
+链表执行插入和删除操作十分方便，修改指针即可，不需要移动大量元素
+
+✅list的缺点：
+
+链表灵活，但是空间(指针域) 和 时间（遍历）额外耗费较大
+
+List有一个重要的性质，插入操作和删除操作都不会造成原有list迭代器的失效，这在vector是不成立的。
+
+
+
+> ✅ **`std::list` 的一个重要特性是：插入或删除不会使原有的迭代器失效（除非删除的是该迭代器所指的元素本身）**
+
+那我们来详细解释：**为什么 list 可以这么干？其他容器（如 vector、set、map）为什么不行？**
+
+🔹 一、先来看 `std::list` 为什么不失效？
+
+✅ 本质原因：`list` 是链表（通常是双向链表）
+
+- 每个元素是一个节点，存在堆上；
+- 节点之间通过指针链接；
+- 插入/删除节点，不会移动其它节点的地址；
+- 所以之前返回的迭代器（其实就是节点指针）依然有效！
+
+```
+cppCopyEditstd::list<int> lst = {1, 2, 3};
+auto it = std::next(lst.begin());  // 指向 2
+lst.insert(lst.begin(), 0);        // 插入 0
+std::cout << *it;                  // 仍然是 2，有效
+```
+
+🔹 二、再来看 vector 为什么会失效？
+
+❌ 原因：`vector` 是**连续数组**
+
+- 插入/删除元素会造成后续元素移动（重排）；
+- 有时还会导致整个数组重新分配到新的内存块（尤其是插入导致容量不足时）；
+- 所以旧的迭代器（本质是指向旧内存地址的指针）会失效！
+
+```
+cppCopyEditstd::vector<int> v = {1, 2, 3};
+auto it = v.begin();
+v.insert(v.begin(), 0);  // 插入会导致元素右移，it 失效
+std::cout << *it;        // ❌ 未定义行为！
+```
+
+🔹 三、其他容器的迭代器失效规则
+
+我们用表格总结一下各种容器的迭代器失效行为：
+
+| 容器类型                          | 插入是否会导致迭代器失效？       | 删除是否会导致迭代器失效？       | 说明                           |
+| --------------------------------- | -------------------------------- | -------------------------------- | ------------------------------ |
+| `vector`                          | ✅ 会（尤其是插入中间或 realloc） | ✅ 会（删除点后所有元素右移）     | 数组结构                       |
+| `deque`                           | ✅ 有概率失效（特别是首尾插入）   | ✅ 有概率失效                     | 分段连续内存                   |
+| `list`                            | ❌ 不会失效（除非删除该元素）     | ❌ 不会失效（除非删除该元素）     | 链表                           |
+| `forward_list`                    | ❌ 不会失效（除非删除该元素）     | ❌ 不会失效（除非删除该元素）     | 单向链表                       |
+| `set` / `map`                     | ✅ 插入通常不失效                 | ✅ 删除该元素会失效，其他不受影响 | 红黑树，结构稳定但元素可变性差 |
+| `unordered_set` / `unordered_map` | ✅ 插入可能会导致迭代器失效       | ✅ 删除该元素会失效               | 哈希表，bucket 可能重排        |
+
+🔹 四、补充说明：为什么容器不统一？
+
+因为每种容器的底层结构不同，迭代器实质也是**对结构的封装**：
+
+| 容器            | 底层结构 | 迭代器实质            |
+| --------------- | -------- | --------------------- |
+| `vector`        | 连续内存 | 原始指针 `T*`         |
+| `list`          | 双向链表 | 指向节点的封装指针    |
+| `set/map`       | 红黑树   | 包含指针 + 树结构信息 |
+| `unordered_map` | 哈希表   | 包括 bucket 信息      |
+
+
+
+因此：**迭代器能不能保留，与结构是否稳定密切相关**。
+
+🔹 五、面试必备总结口诀
+
+> 插删无忧属链表，数组变动请小心；
+>  树类结构看元素，哈希装桶也谨慎。
+
+
+
+#### set/multiset  容器
+
+**简介：**
+
+所有元素都会在插入时自动被排序
+
+**本质：**
+
+set/multiset属于**关联式容器**，底层结构是用**二叉树**实现。
+
+**set****和****multiset****区别**：
+
+set不允许容器中有重复的元素
+
+multiset允许容器中有重复的元素
+
+set容器插入数据时用insert
+
+set容器插入数据的数据会自动排序
+
+
+
+**区别：**
+
+set不可以插入重复数据，而multiset可以
+
+set插入数据的同时会返回插入结果，表示插入是否成功
+
+multiset不会检测数据，因此可以插入重复数据
+
+#### 对组 pair
+
+pair<type, type> p = make_pair( value1, value2 );
+
+
+
+#### map/multimap容器
+
+**简介：**
+
+map中所有元素都是pair
+
+pair中第一个元素为key（键值），起到索引作用，第二个元素为value（实值）
+
+所有元素都会根据元素的键值自动排序
+
+**本质：**
+
+map/multimap属于**关联式容器**，底层结构是用二叉树实现。
+
+**优点：**
+
+可以根据key值快速找到value值
+
+map和multimap**区别**：
+
+map不允许容器中有重复key值元素
+
+multimap允许容器中有重复key值元素
+
+
+
+
+
+
+
+
+
+#### 3. 红黑树
+
+红黑树是一种非严格平衡的二叉查找树，具有自动排序的功能。每个节点存储一个颜色（红或黑），并且通过调整树的结构保持特定的平衡条件，从而保证最坏情况下的查找效率。
+
+### 15.STL 常见算法
+
+主要有三个头文件  <algorithm> <functional> <numeric> 组成
+
+<algorithm>是所有头文件中最大的，范围涉及 比较运算查找、 遍历、 赋值、 修改、等等。
+
+<numeric> 体积很小，只包括几个在序列上面进行简单数学运算的模板函数
+
+<functional> 定义了一些模板类,用以声明函数对象
+
+
+
+#### 函数对象
+
+概念：  重载了（）操作符的类，其对象成为函数对象
+
+​		函数对象使用重载的()时，行为类似函数，所以称为仿函数。
+
+本质：
+
+​	函数对象（仿函数） 是一个类   不是一个函数。
+
+**4.1.2** **函数对象使用**
+
+**特点：**
+
+函数对象在使用时，可以像普通函数那样调用, 可以有参数，可以有返回值
+
+函数对象超出普通函数的概念，函数对象可以有自己的状态
+
+函数对象可以作为参数传递
+
+#### 谓词
+
+概念：  返回bool类型的仿函数称为谓词  
+
+​		一元谓词
+
+​		二元谓词
+
+#### 内建函数对象
+
+STL内建了一下函数对象   functional
+
+​	算数仿函数
+
+​	关系仿函数
+
+​	逻辑仿函数
+
+用法：
+
+这些仿函数所产生的对象，用法和一般函数完全相同
+
+使用内建函数对象，需要引入头文件 #include<functional>
+
+1. 算数仿函数
+
+   plus<T>
+
+   minus()
+
+   multiplies()
+
+   divides()
+
+   modulus()
+
+   negate()
+
+   template<class T> T plus<T> //加法仿函数
+
+   template<class T> T minus<T> //减法仿函数
+
+   template<class T> T multiplies<T> //乘法仿函数
+
+   template<class T> T divides<T> //除法仿函数
+
+   template<class T> T modulus<T> //取模仿函数
+
+   template<class T> T negate<T> //取反仿函数
+
+2. 关系仿函数
+
+   template<class T> bool equal_to<T> //等于
+
+   template<class T> bool not_equal_to<T> //不等于
+
+   template<class T> bool greater<T> //大于
+
+   template<class T> bool greater_equal<T> //大于等于
+
+   template<class T> bool less<T> //小于
+
+   template<class T> bool less_equal<T> //小于等于
+
+3. 逻辑仿函数
+
+   
+
+
+
+#### 4. 常见排序算法
+
+算法主要是由头文件 <algorithm> <functional> <numeric> 组成。
+
+<algorithm> 是所有STL头文件中最大的一个，范围涉及到比较、 交换、查找、遍历操作、复制、修改等等
+
+<numeric> 体积很小，只包括几个在序列上面进行简单数学运算的模板函数
+
+<functional> 定义了一些模板类,用以声明函数对象。
+
+##### 1.常用遍历算法
+
+for_each
+
+```c++
+
+    for_each(iterator beg, iterator end, _func);
+// 遍历算法 遍历容器元素
+// beg 开始迭代器
+// end 结束迭代器
+// _func 函数或者函数对象
+
+```
+
+![image-20250716150636242](assets/image-20250716150636242.png)
+
+
+
+transform 
+
+搬运容器到另一个容器中
+
+```c++
+transform(iter1 beg ,iter1 end,iter2 beg,fun )
+    
+transform(iterator beg1, iterator end1, iterator beg2, _func);
+//beg1 源容器开始迭代器
+//end1 源容器结束迭代器
+//beg2 目标容器开始迭代器
+//_func 函数或者函数对象
+
+```
+
+
+
+
+
+##### 2. 常用查找算法
+
+find //查找元素
+
+find_if //按条件查找元素
+
+adjacent_find //查找相邻重复元素
+
+binary_search //二分查找法
+
+count //统计元素个数
+
+count_if //按条件统计元素个数
+
+
+
+```c++
+find (beg,end,elm)
+    vector<int>::iterator it = find(v.begin(), v.end(), 5);
+// 按值查找元素，找到返回指定位置迭代器，找不到返回结束迭代器位置
+// beg 开始迭代器
+// end 结束迭代器
+// value 查找的元素    
+```
+
+```c++
+find_if()  // 只返回第一个满足条件的元素位置（迭代器）。
+find_if(iterator beg, iterator end, _Pred);
+// 按值查找元素，找到返回指定位置迭代器，找不到返回结束迭代器位置
+// beg 开始迭代器
+// end 结束迭代器
+// _Pred 函数或者谓词（返回bool类型的仿函数）
+```
+
+```c++
+count
+count(iterator beg, iterator end, value);
+// 统计元素出现次数
+// beg 开始迭代器
+// end 结束迭代器
+// value 统计的元素
+```
+
+```c++
+count_if
+count_if(iterator beg, iterator end, _Pred);
+// 按条件统计元素出现次数
+// beg 开始迭代器
+// end 结束迭代器
+// _Pred 谓词
+```
+
+
+
+
+
+##### 3.常用排序算法
+
+sort //对容器内元素进行排序
+
+random_shuffle //洗牌 指定范围内的元素随机调整次序
+
+merge // 容器元素合并，并存储到另一容器中
+
+reverse // 反转指定范围的元素
+
+
+
+```c++
+sort(iterator beg, iterator end, _Pred);
+// 按值查找元素，找到返回指定位置迭代器，找不到返回结束迭代器位置
+// beg 开始迭代器
+// end 结束迭代器
+// _Pred 谓词
+
+```
+
+
+
+```c++
+merge
+merge(iterator beg1, iterator end1, iterator beg2, iterator end2, iterator dest);
+// 容器元素合并，并存储到另一容器中
+// 注意: 两个容器必须是有序的
+// beg1 容器1开始迭代器 // end1 容器1结束迭代器 // beg2 容器2开始迭代器 // end2 容器2结束迭代器 //
+dest 目标容器开始迭代器
+```
+
+
+
+```c++
+reverse(iterator beg, iterator end);
+// 反转指定范围的元素
+// beg 开始迭代器
+// end 结束迭代器
+```
+
+
+
+##### 4.常用拷贝和替换算法
+
+copy // 容器内指定范围的元素拷贝到另一容器中
+
+replace // 将容器内指定范围的旧元素修改为新元素
+
+replace_if // 容器内指定范围满足条件的元素替换为新元素
+
+swap // 互换两个容器的元素
+
+```c++
+copy(iterator beg, iterator end, iterator dest);
+// 按值查找元素，找到返回指定位置迭代器，找不到返回结束迭代器位置
+// beg 开始迭代器
+// end 结束迭代器
+// dest 目标起始迭代器
+```
+
+```c++
+replace(iterator beg, iterator end, oldvalue, newvalue);
+// 将区间内旧元素 替换成 新元素
+// beg 开始迭代器
+// end 结束迭代器
+// oldvalue 旧元素
+// newvalue 新元素
+```
+
+```c++
+replace_if(iterator beg, iterator end, _pred, newvalue);
+// 按条件替换元素，满足条件的替换成指定元素
+// beg 开始迭代器
+// end 结束迭代器
+// _pred 谓词
+// newvalue 替换的新元素
+```
+
+```c++
+swap(container c1, container c2);
+// 互换两个容器的元素
+// c1容器1
+// c2容器2
+```
+
+
+
+
+
+##### 5. 常用算术生成算法 \#include <numeric>
+
+**总结：**accumulate使用时头文件注意是 numeric，这个算法很实用
+
+
+
+
+
+accumulate // 计算容器元素累计总和
+
+fill // 向容器中添加元素
+
+```c++
+accumulate()
+accumulate(iterator beg, iterator end, value);
+// 计算容器元素累计总和
+// beg 开始迭代器
+// end 结束迭代器
+// value 起始值
+int total = accumulate(v.begin(), v.end(), 0);
+```
+
+```c++
+fill(iterator beg, iterator end, value);
+// 向容器中填充元素
+// beg 开始迭代器
+// end 结束迭代器
+// value 填充的值
+```
+
+
+
+##### 6. 常用集合算法
+
+
+
+set_intersection // 求两个容器的交集
+
+```c++
+
+```
+
+set_union // 求两个容器的并集
+
+set_difference // 求两个容器的差集
+
+
+
+
+
+
+
+
+
+
+
+##### 4.1 `sort()`
+
+- **适用容器**：仅支持随机访问的容器，如 `vector`、`deque`、`array`。
+- **功能**：快速排序。
+
+[复制代码](#)
+
+```
+bool func(``int` `a, ``int` `b) {``  ``return` `a > b; ``// 降序排列``}``sort(vec.begin(), vec.end(), func); ``// 对vector进行排序
+```
+
+##### 4.2 `partial_sort()`
+
+- **功能**：对部分元素进行排序，使用堆排序实现。
+- **参数**：排序范围，默认排序前 `n` 个元素。
+
+[复制代码](#)
+
+```
+int` `n = ``4``; ``// 需要排序的元素个数``partial_sort(vec.begin(), vec.begin() + n, vec.end(), func); ``// 排序前4个元素
+```
+
+##### 4.3 `is_sorted()`
+
+- **功能**：检查容器是否已排序。
+- **返回值**：布尔值，`true` 表示已排序。
+
+[复制代码](#)
+
+```
+bool result = is_sorted(vec.begin(), vec.end(), func);
+```
+
+##### 4.4 `is_sorted_until()`
+
+- **功能**：返回第一个破坏排序规则的元素位置。
+
+[复制代码](#)
+
+```
+auto it = is_sorted_until(vec.begin(), vec.end(), func);
+```
+
+#### 5. 查找操作
+
+##### 5.1 `find()`
+
+- **功能**：查找指定元素。
+
+[复制代码](#)
+
+```
+vector<``int``> vec{``10``, ``20``, ``30``, ``40``, ``50``};``auto it = find(vec.begin(), vec.end(), ``30``); ``// 查找30``if` `(it != vec.end()) {``  ``cout << ``"查找成功："` `<< *it;``} ``else` `{``  ``cout << ``"查找失败"``;``}
+```
+
+##### 5.2 `find_if()`
+
+- **功能**：根据自定义谓词查找元素。
+
+[复制代码](#)
+
+```
+bool mycomp(``int` `i) {``  ``return` `(i % ``2``) == ``1``; ``// 查找奇数``}``vector<``int``> myvector{``4``, ``2``, ``3``, ``1``, ``5``};``auto it = find_if(myvector.begin(), myvector.end(), mycomp);
+```
+
+#### 6. 使用 `vector` 避免频繁的内存重新分配
+
+`vector` 在扩容时通常会以 2 倍容量增长，这会导致频繁的内存分配和元素拷贝。为了优化性能，可以采取以下策略：
+
+##### 6.1 预分配内存
+
+在创建 `vector` 时，可以使用 `reserve()` 方法预先分配内存，以减少多次扩容。
+
+##### 6.2 合理选择初始容量
+
+根据数据的预计大小选择合适的初始容量，避免不必要的扩容操作。
+
+##### 6.3 优化算法
+
+使用时间复杂度较低的算法，避免在数据量增大时造成性能瓶颈。
+
+#### 7. `vector` 的 `resize()` 与 `reserve()`
+
+##### 7.1 `resize()`
+
+- **功能**：调整容器的大小。
+- **效果**：如果 `n` 小于当前大小，则删除尾部元素；如果 `n` 大于当前大小，新的元素会被默认构造并添加到尾部。
+
+##### 7.2 `reserve()`
+
+- **功能**：调整容器的容量，不会改变当前大小。
+- **效果**：用于减少扩容次数，确保容器有足够的内存空间。
+
+#### 8. `vector` 扩容原理
+
+- **扩容过程**：每次扩容时，`vector` 会分配新的内存块并将现有元素复制到新内存中，旧内存被释放。
+- **扩容系数**：通常情况下，`vector` 容量每次会翻倍或增加 1.5 倍，这可以减少频繁的扩容。
+
+##### 8.1 Linux中的内存管理
+
+在Linux系统中，内存区域以2的倍数扩容，以便进行高效的内存分配。
+
+##### 8.2 Windows中的内存管理
+
+在Windows系统中，内存分配通常会增加1.5倍，以便更好地利用已经释放的内存。
+
+#### 9. 迭代器
+
+迭代器是STL中用于访问容器元素的一种抽象工具。通过迭代器，容器元素的访问具有一致的接口，并且可以实现多态。
+
+**注意**：迭代器只能前进，不能回退。
+
+#### 10. 迭代器失效的情况
+
+迭代器可能会因为容器结构的修改而失效。不同类型的容器失效的情况略有不同：
+
+- **数组型数据结构**（如 `vector`）：`insert` 和 `erase` 操作会使插入或删除点之后的所有迭代器失效。
+- **链表型数据结构**（如 `list`）：`erase` 操作只会使指向删除元素的迭代器失效，其他迭代器不受影响。
+- **树型数据结构**（如 `map`）：`erase` 操作会使指向删除元素的迭代器失效，其他迭代器不受影响。 `insert` 操作不会使任何迭代器失效。
+
+
+
+#### 4.2.1 vector list异同⭐⭐⭐⭐⭐
+
+| 项目       | `vector`              | `list`（`std::list`）         |
+| ---------- | --------------------- | ----------------------------- |
+| 底层结构   | 连续数组              | 双向链表                      |
+| 随机访问   | ✅ 支持（`v[i]`）      | ❌ 不支持                      |
+| 插入效率   | ❌ 中间插入开销大      | ✅ 任意位置插入 O(1)           |
+| 删除效率   | ❌ 中间删除开销大      | ✅ 任意位置删除 O(1)           |
+| 内存局部性 | ✅ 好                  | ❌ 差                          |
+| 空间开销   | 小                    | 大（每个节点需要两个指针）    |
+| 迭代器失效 | 插入/删除可能全部失效 | 插入/删除不会使其他迭代器失效 |
+
+#### 4.2.2 vector内存是怎么增长的vector的底层实现⭐⭐⭐⭐\
+
+**底层结构**：`vector` 使用一段连续内存 `T* buffer` 来存储数据。
+
+**容量扩容机制**：
+
+- 当你插入新元素超出当前容量（`capacity()`）时，会进行**自动扩容**。
+- 扩容策略通常是**2 倍增长**（实现细节可能因编译器而异）。
+- 扩容过程包括：
+  1. 分配新内存（通常是原容量的两倍）；
+  2. 将旧元素 `move` 或 `copy` 到新地址；
+  3. 释放旧内存。
+
+**注意**：扩容会导致指针、引用、迭代器**全部失效**！
+
+
+
+#### 4.2.3 vector和deque的比较⭐⭐⭐⭐
+
+| 特性         | `vector`                 | `deque`                  |
+| ------------ | ------------------------ | ------------------------ |
+| 底层结构     | 单块连续数组             | 分段内存数组 + 索引表    |
+| 随机访问     | ✅ 快速（`O(1)`）         | ✅ 也支持，但略慢         |
+| 首尾插入效率 | ❌ 头部插入慢（O(n)）     | ✅ 头尾插入都是 O(1)      |
+| 中间插入     | ❌ 慢                     | ❌ 仍慢                   |
+| 内存结构     | 连续块                   | 非连续块                 |
+| 适合场景     | 重视随机访问、尾部操作快 | 需要双端插入或删除的场景 |
+
+
+
+#### 4.2.4为什么stl里面有sort函数list里面还要再定义一个sort⭐⭐⭐
+
+`std::sort()` 只能作用于**随机访问迭代器**（如 `vector`, `deque`）。
+
+`list` 的迭代器是**双向迭代器**，不支持 `it + n`，所以不能用 `std::sort()`。
+
+因此，`std::list` 提供了成员函数 `.sort()`，使用**归并排序**，时间复杂度为 `O(n log n)`，不需要额外内存，稳定排序。
+
+
+
+#### 4.2.5 STL底层数据结构实现⭐⭐⭐⭐
+
+| 容器 | 底层实现结构 |
+| ---- | ------------ |
+
+| `vector` | 动态数组（连续内存） |
+| -------- | -------------------- |
+
+| `list` | 双向链表 |
+| ------ | -------- |
+
+| `deque` | 段式数组 + 中央控制块 |
+| ------- | --------------------- |
+
+| `set/map` | 平衡二叉搜索树（红黑树） |
+| --------- | ------------------------ |
+
+| `unordered_*` | 哈希表（开放地址或链地址法） |
+| ------------- | ---------------------------- |
+
+| `stack/queue` | 通常是基于 `deque` 封装 |
+| ------------- | ----------------------- |
+
+#### 4.2.6利用迭代器删除元素会发生什么？⭐⭐⭐⭐
+
+示例：
+
+```
+cppCopyEditfor (auto it = v.begin(); it != v.end(); ) {
+    if (*it == val) it = v.erase(it);  // 返回下一个有效迭代器
+    else ++it;
+}
+```
+
+**正确做法**：用 `erase` 的返回值更新迭代器，防止失效。
+
+**为什么不能直接 `++it`？**：`erase(it)` 会让当前迭代器失效，继续使用是**未定义行为**。
+
+`list.erase(it)` 删除当前元素不会影响其他迭代器，`vector.erase(it)` 会让**之后所有元素的迭代器失效**。
+
+
+
+#### 4.2.7 map是如何实现的，查找效率是多少⭐⭐⭐⭐⭐
+
+
+
+**底层结构**：红黑树（self-balancing BST）。
+
+**特点**：
+
+- 自动按 key 排序；
+- 插入、删除、查找：**时间复杂度为 `O(log n)`**；
+- 每个节点包含 `<key, value>` 对；
+- 遍历是**有序的**。
+
+若不需要有序访问，可用 `unordered_map`（哈希表）查找更快（平均 `O(1)`，最坏 `O(n)`）。
+
+
+
+#### 4.2.8几种模板插入的时间复杂度 ⭐⭐⭐⭐⭐
+
+| 容器            | 插入位置  | 时间复杂度    | 备注                    |
+| --------------- | --------- | ------------- | ----------------------- |
+| `vector`        | 尾部      | `O(1)` (摊还) | 若触发扩容则为 `O(n)`   |
+| `vector`        | 中间/头部 | `O(n)`        | 元素右移                |
+| `list`          | 任意位置  | `O(1)`        | 不包括查找迭代器时间    |
+| `deque`         | 首尾      | `O(1)`        | 内部分段控制            |
+| `map/set`       | 插入      | `O(log n)`    | 红黑树维持平衡          |
+| `unordered_map` | 插入      | 平均 `O(1)`   | 最坏 `O(n)`（哈希冲突） |
+
+
+
+
+
+
+
+
+
+### 16.C++多线程机制
+
+#### 2. 创建线程
+
+获得id
+
+```c++
+pthread_t pthread_self(void)
+```
+
+![image-20250716163210044](assets/image-20250716163210044.png)
+
+
+
+![image-20250716163357652](assets/image-20250716163357652.png)
+
+![image-20250716164651679](assets/image-20250716164651679.png)
+
+![image-20250716163537373](assets/image-20250716163537373.png)
+
+#### 3. 线程退出：
+
+```c++
+pthread_exit()//不是释放拟内存空间
+```
+
+![image-20250716164744685](assets/image-20250716164744685.png)
+
+```
+//县城回收
+
+pthread_join()
+
+```
+
+![image-20250716165126121](assets/image-20250716165126121.png)
+
+
+
+
+
+#### 4. join（）
+
+#include<thread>
+
+```c++
+//创建线程
+void func(std::string str)
+{
+    std::cout<< <<endl;
+
+}
+
+int main()
+{
+	std::thread thread1(func，“dello”);
+	
+	//主程序等待子线程  子现场还在运行就阻塞 运行完回收
+	thread1.join();
+    //分离子线程和主线程   detach()
+    //thread1.detch()  //主线程结束后   子线程可以持续在后台运行
+	
+
+}
+```
+
+
+
+![image-20250716170733039](assets/image-20250716170733039.png)
+
+```c++
+//创建线程
+void func(std::string str)
+{
+    std::cout<< <<endl;
+
+}
+
+int main()
+{
+	std::thread thread1(func，“dello”);
+	
+	//主程序等待子线程  子现场还在运行就阻塞 运行完回收
+	thread1.join();
+    //分离子线程和主线程   detach()
+    //thread1.detch()  //主线程结束后   子线程可以持续在后台运行  一般不会使用
+	
+
+}
+```
+
+#### 5. joinable
+
+```c++
+//创建线程
+void func(std::string str)
+{
+    std::cout<< <<endl;
+	return ;
+}
+
+int main()
+{
+	std::thread thread1(func，“dello”);
+	
+	//先判断是否可以使用joinable() 
+	bool ret=thread1.joinable();
+	if(ret)
+    {
+		thread1.join(); //是阻塞的  不会任务切换
+    	}
+	
+
+}
+```
+
+![image-20250716171307601](assets/image-20250716171307601.png)
+
+
+
+#### 6. 互斥锁  m
+
+![image-20250716172216915](assets/image-20250716172216915.png)
+
+
+
+#### 7. lock_guard(); 
+
+
+
+lock_guard();  
+
+```c++
+只有自动加锁      自动解锁
+```
+
+
+
+构造函数被调用时 该互斥量会自动被锁定，
+
+当析构函数被调用是，该互斥量会被自动解锁
+
+std::lock_guard对象不能复制或移动，因此他只能在局部作用域中使用。
+
+```c++
+std::lock_guard<std::mutex> lg(mtx)
+    //mu.lock()
+    //mu.unlock()
+```
+
+具体分析如下：
+
+```c++
+cppCopyEditfor (int i = 0; i < 10000; i++) {
+    std::lock_guard<std::mutex> lg(mtx);  // 每次循环都会构造一个 lock_guard
+    shared_data++;
+}
+```
+
+- 这行定义的 `lg` 是一个**局部变量**，其**生命周期从声明位置开始，到所在的作用域末尾为止**；
+- 在这里，`lg` 的作用域是 `for` 循环的花括号 `{}`，也就是每次迭代执行一次，然后自动析构，**自动释放锁**；
+- 换句话说：**每次 `for` 循环迭代都会加锁、执行 `shared_data++`、然后自动解锁**。
+
+
+
+![image-20250716172913027](assets/image-20250716172913027.png) 
+
+![image-20250716173050730](assets/image-20250716173050730.png)
+
+
+
+#### 8. 🔍unique_lock(); 
+
+```c++
+互斥量封装类： 主要特点是可以对互斥量进行更加零花的管理，包括延迟加锁、条件变量、超时等
+```
+
+```c++
+for (int i = 0; i < 10000; i++) {
+    std::unique_lock<std::mutex> lg(mtx); //枷锁的时候可能会阻塞  可以设置超时
+    //lg.lock()  lg(mtx,defer_lock)
+    // lg.try_lock_for(std::chrono::secounds(5))超时时间5S钟  我只等待一段时间 超时就返回
+    //try_lock_untile()传一个时间点  不常用
+    shared_data++;
+}
+```
+
+
+
+
+
+![image-20250716194802283](assets/image-20250716194802283.png)
+
+#### 9. 🔍  call_once与其使用场景（只能在线程里面使用）
+
+是C++11标准库中的以哦个函数，用于确保某个函数只会被调用一次，
+
+一个类  全局只需要创建一个对象就可以了，不如日志；-》单例模式
+
+```c++
+//禁用拷贝构造和等于号
+Class Log
+{
+public:
+Log(const Log&log)=delet
+   Log  &operator =(const Log&log)=delet
+
+    static log& GetInstance()
+{
+    //Static Log log;//全局静态log
+    
+    std::call_once(once,init)//保证同一时间只有一个调用
+    return log
+}
+
+    static void init()
+    {
+        if(!log)log=newLog;
+    }
+    
+    private:
+    static std::once_flage once;c  
+}
+
+
+
+```
+
+
+
+![image-20250716200940932](assets/image-20250716200940932.png)
+
+单例模式 多个线程同时调用同一个全局函数  同一个里面的变量，可能会有多次创建，
+
+
+
+![image-20250716201123208](assets/image-20250716201123208.png)
+
+![image-20250716201624345](assets/image-20250716201624345.png)
+
+
+
+
+
+✅   call_once与互斥锁的区别
+
+✅ 一句话区别：
+
+> `std::mutex` 用来**保护一段代码块在多个线程中互斥执行**，而
+>  `std::call_once` 用来**确保某个函数只被执行一次**（通常用于线程安全的**一次性初始化**）。
+
+🧩 详细对比：call_once vs mutex
+
+| 比较项       | `std::mutex`                           | `std::call_once`                       |
+| ------------ | -------------------------------------- | -------------------------------------- |
+| ✅ 功能       | 多线程互斥执行某段代码                 | 多线程下**只执行一次**某段代码         |
+| ✅ 使用方式   | 加锁、解锁（推荐用 `std::lock_guard`） | 配合 `std::once_flag` 使用             |
+| ✅ 调用次数   | 每次都可以加锁                         | 无论多少线程调用，指定函数只会执行一次 |
+| ✅ 适用场景   | 多线程保护共享资源（如读写变量）       | 单例模式、延迟初始化、全局变量初始化   |
+| ✅ 性能开销   | 相对较大（每次都要加锁）               | 更轻量，仅执行一次，之后线程直接跳过   |
+| ✅ 线程安全性 | 需要正确管理锁（可能死锁）             | 自动线程安全                           |
+| ✅ 代码示例   | `lock_guard<mutex> lock(mtx);`         | `call_once(flag, init_func);`          |
+
+📌 示例代码对比：
+
+🔹 `std::mutex` 示例：保护资源
+
+```
+cppCopyEditstd::mutex mtx;
+int shared_data = 0;
+
+void add() {
+    std::lock_guard<std::mutex> lock(mtx);
+    shared_data++;  // 所有线程都执行，但互斥
+}
+```
+
+🔹 `std::call_once` 示例：只执行一次化
+
+```
+cppCopyEditstd::once_flag flag;
+int config = 0;
+
+void init() {
+    config = 42;  // 只初始化一次
+}
+
+void load() {
+    std::call_once(flag, init);  // 多线程调用但 init 只执行一次
+}
+```
+
+⚠️ 注意事项
+
+- `std::call_once` 常用于单例模式、懒汉式初始化：
+
+  ```
+  cppCopyEditstatic MySingleton& getInstance() {
+      static std::once_flag flag;
+      static MySingleton* instance = nullptr;
+      std::call_once(flag, []() {
+          instance = new MySingleton();
+      });
+      return *instance;
+  }
+  ```
+
+- 不要用 `mutex` 来代替 `call_once` 实现“只执行一次”，会导致多线程下性能低、逻辑复杂、甚至死锁。
+
+✅ 总结
+
+| 你想要的功能                               | 用什么？      |
+| ------------------------------------------ | ------------- |
+| 多线程都能执行，但不能同时执行同一段代码   | ✅ `mutex`     |
+| 多线程只允许有一个执行一次（一次性初始化） | ✅ `call_once` |
+
+####  10 . condiation_var 条件变量  （生产者消费者模型）
+
+有点像poll唤醒机制（ 生产者唤醒消费者执行）
+
+是的，**`std::condition_variable` 在 `wait(lock)` 时会自动释放锁并进入等待状态**，这正是它的核心机制。
+
+```c++
+condition_variable
+mutex
+//在需要等待条件变量的地方
+ unique_lock()
+condition_variable::wait()//阻塞
+condition_variable::wait_for()
+condition_variable::wait_until()
+    
+//在其他线程中需要通知等待的线程环形   
+condation_variable::notify_onec;
+condation_variable::notify_all();
+
+```
+
+
+
+```c++
+condition_variable::wait(lock,true/false)//阻塞   true 不阻塞   false阻塞等待
+```
+
+  ![image-20250716204619204](assets/image-20250716204619204.png)
+
+
+
+
+
+
+
+
+
+![image-20250716204122305](assets/image-20250716204122305.png)
+
+![image-20250716203712036](assets/image-20250716203712036.png)
+
+std::condition_variable cv;
+std::mutex mtx;
+
+std::unique_lock<std::mutex> lock(mtx);
+cv.wait(lock);  // ✅ 自动释放锁，等待条件被唤醒后再自动重新加锁
+
+```c++
+std::mutex mtx;
+std::condition_variable cv;
+bool ready = false;
+
+void worker() {
+    std::unique_lock<std::mutex> lock(mtx);
+    cv.wait(lock, [] { return ready; });  // 自动释放锁并等待
+    std::cout << "Worker proceeds!\n";
+}
+
+void notifier() {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        ready = true;
+    }
+    cv.notify_one();  // 唤醒 worker
+}
+
+```
+
+![image-20250716210707517](assets/image-20250716210707517.png)
+
+
+
+✅ **问题 1：为什么 `for` 循环里还有一对 `{}`？**
+
+这对花括号的作用是：
+
+> **限定 `std::unique_lock<std::mutex> lock(mtx);` 的作用域**。
+
+🔍 原因：
+
+- `unique_lock` 是 RAII 风格的锁：进入作用域时加锁，离开作用域时自动解锁。
+- 所以这对 `{}` 保证：
+  - `queue.push(i)` 和 `cv.notify_one()` 时，锁是持有状态；
+  - 一旦 `{}` 结束，`lock` 被析构，**自动释放互斥锁**；
+  - 然后再 `sleep_for(...)`，此时锁已经释放，方便其他线程运行。
+
+✅问题 2：`g_cv.notify_one()` 是立即唤醒等待线程吗？**
+
+**不是立即执行，而是立即通知**，被通知的线程需要**等待锁释放后**才能继续执行。
+
+🔍 执行流程简图：
+
+1. `Producer` 线程执行到 `notify_one()`，发出“有新数据啦”的信号；
+2. **此时锁还没释放**（还在花括号 `{}` 内）；
+3. 等到锁随着 `lock` 离开作用域被释放；
+4. 被唤醒的消费者线程尝试获得锁（成功后）；
+5. 才真正进入继续执行（如 `wait()` 后面的逻辑）。
+
+
+
+
+
+
+
+notify_once()  🔧 发生了什么（底层流程）：
+
+当你调用：
+
+```
+cpp
+
+
+CopyEdit
+cv.notify_one();
+```
+
+背后大致会发生以下几个步骤：
+
+1. **条件变量检查是否有线程在 wait() 上阻塞**；
+2. 如果有，**唤醒其中一个线程**（是哪个线程由操作系统调度决定）；
+3. 被唤醒的线程会尝试重新**获取与 `wait()` 关联的互斥锁**；
+4. 如果获取到锁，线程继续执行 `wait()` 之后的代码；
+5. 如果锁还被别人占着，它会继续等待锁释放。
+
+#### 11.  跨平台线程池  生产者消费者模型
+
+
+
+![image-20250716212712666](assets/image-20250716212712666.png)
+
+ emplace_back() 在原地直接构造一个新变量，不会进行      push_back()->进行拷贝构造
+
+ 
+
+这是一个非常专业的问题，**在实现线程池时**，你到底应该用 `emplace_back()` 还是 `push_back()`，要看你如何创建线程对象的 —— **两者都可以用，但推荐 `emplace_back()`，更高效也更自然**。
+
+✅ 先说结论：
+
+> 在线程池中添加线程对象时，一般使用 `std::vector<std::thread>::emplace_back(...)`，因为它：
+>
+> - **直接在容器内部原地构造线程对象**；
+> - 避免了不必要的临时对象拷贝或移动；
+> - 更符合 C++11 的推荐写法。
+
+✅ 详细解释：`emplace_back` vs `push_back`
+
+| 方法              | 用法                                       | 是否推荐在线程池中用    |
+| ----------------- | ------------------------------------------ | ----------------------- |
+| `push_back(t)`    | 你**先创建一个线程对象**，再传进去         | ⚠️ 额外构造+移动，不推荐 |
+| `emplace_back(f)` | 你直接把构造线程需要的参数传进去（如函数） | ✅ 推荐，高效原地构造    |
+
+`std::queue<T>` 的 `front()` 返回的是 **左值引用（lvalue reference）**，也就是：
+
+```
+cppCopyEditT& front();
+const T& front() const;
+```
+
+✅ 所以答案是：**左值**
+
+![image-20250716215118142](assets/image-20250716215118142.png)
+
+
+
+```c++
+#include <vector>    // 用于存储线程
+#include <thread>    // 线程相关功能
+#include <queue>     // 任务队列
+#include <functional> // 函数对象
+#include <mutex>     // 互斥锁
+#include <condition_variable> // 条件变量
+
+class ThreadPool {
+public:
+    // 构造函数，创建指定数量的工作线程
+    ThreadPool(size_t numThreads) : stop(false) {  // stop标志初始化为false
+        for (size_t i = 0; i < numThreads; ++i) {  // 创建numThreads个线程
+            threads.emplace_back([this] {  // 每个线程执行以下lambda函数
+                while (true) {  // 线程持续工作
+                    std::function<void()> task;  // 用于存储从队列取出的任务
+
+                    {  // 加锁区域开始
+                        std::unique_lock<std::mutex> lock(mtx);  // 获取互斥锁
+                        
+                        // 等待条件变量通知，当任务队列不为空或线程池停止时继续
+                        condition.wait(lock, [this] {
+                            return !tasks.empty() || stop;
+                        });
+
+                        // 如果线程池已停止且任务队列为空，则线程退出
+                        if (stop && tasks.empty()) {
+                            return;
+                        }
+
+                        // 从任务队列取出第一个任务
+                        task = std::move(tasks.front());
+                        tasks.pop();
+                    }  // 加锁区域结束，自动释放锁
+
+                    task();  // 执行任务
+                }
+            });
+        }
+    }
+
+    // 析构函数，停止所有线程
+    ~ThreadPool() {
+        {  // 加锁区域开始
+            std::unique_lock<std::mutex> lock(mtx);
+            stop = true;  // 设置停止标志
+        }  // 加锁区域结束，自动释放锁
+        
+        condition.notify_all();  // 通知所有等待的线程
+        
+        // 等待所有线程完成
+        for (auto& thread : threads) {
+            thread.join();  // 等待线程结束
+        }
+    }
+
+    // 向线程池添加任务
+    template<class F, class... Args>
+    void enqueue(F&& f, Args&&... args) {
+        // 使用bind将函数和参数绑定为一个无参函数对象
+        std::function<void()> task = std::bind(std::forward<F>(f), std::forward<Args>(args)...);
+        
+        {  // 加锁区域开始
+            std::unique_lock<std::mutex> lock(mtx);
+            tasks.emplace(std::move(task));  // 将任务加入队列
+        }  // 加锁区域结束，自动释放锁
+        
+        condition.notify_one();  // 通知一个等待的线程有新任务
+    }
+
+private:
+    std::vector<std::thread> threads;  // 存储工作线程
+    std::queue<std::function<void()>> tasks;  // 任务队列
+    std::mutex mtx;  // 保护任务队列的互斥锁
+    std::condition_variable condition;  // 用于线程间通信的条件变量
+    bool stop;  // 线程池停止标志
+};
+```
 
 
 
