@@ -3729,7 +3729,7 @@ Main函数使用说明
 
 #### 12  .async future packaged_task  promise  异步并发  获得线程的返回值
 
-
+`promise` / `future` 一般用于 **一次性** 通信。   
 
 ##### 1. async  future
 
@@ -3837,12 +3837,12 @@ std::future<T>：用于在另一个线程中获取该值
 void producer(promise<int> prom)
 {
     this_thread::sleep_for(chrono::seconds(1));
-    prom.set_value(10);  //设置promise的值
+    prom.set_value(10);  //设置promise的值  只设置一次  第二次会抛出异常
 }
 
 void comsumer(future<int> fu)
 {
-    int ret=fu.get(); //会阻塞等待promise设置值   用于同步
+    int ret=fu.get(); //会阻塞等待promise设置值   这 并不是“只读”操作，而是“取一次就没了”的操作。只能调用一次！ 调第二次就会抛出异常：
     cout<<"ret:"<<ret<<endl;
 }
 
@@ -3946,7 +3946,7 @@ int main()
 
 
 
-std:atomic是C++11标准库中的一个模板类，用于实现多线程环境下的原子操作。它
+std:atomic 是C++11标准库中的一个模板类，用于实现多线程环境下的原子操作。它
 提供了一种线程安全的方式来访问和修改共享变量，可以避免多线程环境中的数据竞争问
 题。
 
@@ -3967,7 +3967,7 @@ atomic<int> shared_data=0;
 std::atomic<int> shared_data = 0;
 void func() {
     for (int i = 0; i < 100000; ++i) {
-    ______
+   
     shared_data++;
     }
 }
@@ -3997,7 +3997,7 @@ int y = x.load();   // 原子读
 ✅ 原子加减
 
 ```
-cppCopyEditx++;                // 原子加一
+x++;                // 原子加一
 x.fetch_add(2);     // 加2，返回修改前的值
 x.fetch_sub(1);     // 减1，返回修改前的值
 ```
@@ -4007,7 +4007,7 @@ x.fetch_sub(1);     // 减1，返回修改前的值
 这是 **无锁编程核心操作**，实现类似乐观锁的机制：
 
 ```
-cppCopyEditint expected = 5;
+int expected = 5;
 if (x.compare_exchange_strong(expected, 10)) {
     // 成功：x 原本是 5，现在改成 10
 } else {
@@ -4034,6 +4034,20 @@ int y = x.load(std::memory_order_acquire);
 | 原子加/减            | `.fetch_add()`, `.fetch_sub()` |
 | 自增自减             | `++x`, `--x`                   |
 | CAS 操作（比较交换） | `.compare_exchange_strong()`   |
+
+#### 14.读写锁
+
+是一种同步机制，与i徐多个读操作同时进行，写操作必须独立访问，通过分离读写操作提高并发性能，是用于读多写少的场景
+
+无读锁时，读写可共享 
+
+无写无读时，才可加写锁
+
+优先级策略优化问题
+
+
+
+
 
 
 
@@ -4112,4 +4126,143 @@ int y = x.load(std::memory_order_acquire);
 
 
 # 3. linux基础命令
+
+
+
+
+
+# 上传git
+
+
+
+```c
+ cd D:/
+
+cd a资料/研究生资料/找工作/C++知识/
+
+ git add resum_.md
+ git commit -m "2025/7/17"
+
+git push -u origin master
+
+
+
+
+```
+
+
+
+## 1. GIT 指令
+
+```c
+//gloabl 关键字表示这台机器上的所有GIT仓库都会使用这个配置 ，也可以为某个仓库制定不同的仓库地址
+git config --global  user.name "JKX-yy"
+git config --global  user.email "983008880@qq.com"
+    
+```
+
+
+
+## 4
+
+## 4. 创建版本库
+
+
+
+创建一个仓库，可以简单理解为一个目录，里面的所有文件都可以被GIT管理起来，每个文件的修改删除 Git都能跟踪，一边任何时刻都可以追踪历史，
+
+```c++
+mkdir learngit 
+cd learngit
+pwd
+```
+
+
+
+初始化为可管理的仓库,`.git`的目录，这个目录是Git来跟踪管理版本库的，没事千万不要手动修改这个目录里面的文件，不然改乱了，就把Git仓库给破坏了.
+
+```c
+git init 
+// ll  会出现一个隐藏目录  .git 
+    //ls -ah 
+```
+
+
+
+提交本地仓库
+
+
+
+
+
+```c
+//第一步，用命令git add告诉Git，把文件添加到仓库
+git add ..  //(可以多次add)
+//第二步，用命令git commit告诉Git，把文件提交到仓库：    
+git commit -m "说明"
+    
+git push -u origin master
+```
+
+
+
+因为`commit`可以一次提交很多文件，所以你可以多次`add`不同的文件，比如：
+
+```c
+$ git add file1.txt
+$ git add file2.txt file3.txt
+$ git commit -m "add 3 files."
+
+```
+
+## 5.时光穿梭机
+
+
+
+使用git add提交后  继续修改文件，
+
+### 1.查看状态
+
+```c
+git  status //查看仓库状态
+    
+    
+$ git status
+    /*
+On branch master
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+	modified:   readme.txt  //已经修改
+
+no changes added to commit (use "git add" and/or "git commit -a")*/
+
+```
+
+### 2. 查看具体哪里修改了difference
+
+
+
+但是我的是md的文件调用后并没有输出
+
+```c
+git diff 
+    
+    
+```
+
+```c
+$ git diff readme.txt 
+    
+diff --git a/readme.txt b/readme.txt
+index 46d49bf..9247db6 100644
+--- a/readme.txt
++++ b/readme.txt
+@@ -1,2 +1,2 @@
+-Git is a version control system.
++Git is a distributed version control system.
+ Git is free software.
+
+```
 
