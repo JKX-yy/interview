@@ -4242,7 +4242,7 @@ no changes added to commit (use "git add" and/or "git commit -a")*/
 
 ### 2. 查看具体哪里修改了difference
 
-
+`git diff`顾名思义就是查看difference，显示的格式正是Unix通用的diff格式，可以从上面的命令输出看到，我们在第一行添加了一个`distributed`单词。
 
 但是我的是md的文件调用后并没有输出
 
@@ -4252,7 +4252,7 @@ git diff
     
 ```
 
-```c
+```
 $ git diff readme.txt 
     
 diff --git a/readme.txt b/readme.txt
@@ -4265,4 +4265,395 @@ index 46d49bf..9247db6 100644
  Git is free software.
 
 ```
+
+### 1.版本退回
+
+Git也是一样，每当你觉得文件修改到一定程度的时候，就可以“保存一个快照”，这个快照在Git中被称为`commit`。一旦你把文件改乱了，或者误删了文件，还可以从最近的一个`commit`恢复，然后继续工作，而不是把几个月的工作成果全部丢失。
+
+
+
+查看提交的历史记录
+
+```c
+git log
+  输出 版本号    
+    
+```
+
+`git log`命令显示从最近到最远的提交日志，我们可以看到3次提交，最近的一次是`append GPL`，上一次是`add distributed`，最早的一次是`wrote a readme file`。
+
+如果嫌输出信息太多，看得眼花缭乱的，可以试试加上`--pretty=oneline`参数：
+
+
+
+```
+$ git log
+commit 1094adb7b9b3807259d8cb349e7df1d4d6477073 (HEAD -> master)//head表示当前版本   最新版本
+Author: Michael Liao <askxuefeng@gmail.com>
+Date:   Fri May 18 21:06:15 2018 +0800
+
+    append GPL
+
+commit e475afc93c209a690c39c13a46716e8fa000c366
+Author: Michael Liao <askxuefeng@gmail.com>
+Date:   Fri May 18 21:03:36 2018 +0800
+
+    add distributed
+
+commit eaadf4e385e865d25c48e7ca9c8395c3f7dfaef0
+Author: Michael Liao <askxuefeng@gmail.com>
+Date:   Fri May 18 20:59:18 2018 +0800
+
+    wrote a readme file
+
+```
+
+//如果关机了  后悔了 想穿越回来可以  git reflog  用来记录你的每一次命令
+
+```c
+git reflog
+    
+```
+
+```
+$ git reflog
+adf82ef (HEAD -> master) HEAD@{0}: commit: xx
+7c3fa38 HEAD@{1}: commit: 2025/7/17
+ac363eb (origin/master) HEAD@{2}: commit: 线程池2
+52ee54e HEAD@{3}: commit: 线程池
+77c6ce1 HEAD@{4}: commit (initial): c++ 面试可能会问的问题
+
+```
+
+每提交一个新版本，实际上Git就会把它们自动串成一条时间线。如果使用可视化工具查看Git历史，就可以更清楚地看到提交历史的时间线：
+
+
+
+上一个版本就是`HEAD^`，上上一个版本就是`HEAD^^`，当然往上100个版本写100个`^`比较容易数不过来，所以写成`HEAD~100`。
+
+```c
+git reset --hard  HEAD^  //回退到上一个版本 HEAD~n
+```
+
+从21世纪穿越到19世纪  但是只要穿梭机不关（命令行窗口还没有被关掉），可以找到之前的commit id  
+
+版本号没必要写全，前几位就可以了，Git会自动去找。当然也不能只写前一两位，因为Git可能会找到多个版本号，就无法确定是哪一个了。
+
+```c
+git reset --hard 1094a
+```
+
+
+
+
+
+🔧 三个核心概念先解释清楚
+
+| 名词                        | 含义                                          |
+| --------------------------- | --------------------------------------------- |
+| `HEAD`                      | 当前所指向的提交（你正在哪个 commit 上）      |
+| `index`（暂存区）           | 用 `git add` 加进去的内容（准备要提交的内容） |
+| 工作区（Working Directory） | 你当前看到的项目文件（你在编辑器里改的内容）  |
+
+
+
+
+
+
+
+示例场景（你刚做了两次提交）
+
+假设你有一个 `file.txt` 文件，依次执行了以下操作：
+
+```
+bashCopyEditecho "first line" > file.txt
+git add file.txt
+git commit -m "first commit"
+
+echo "second line" >> file.txt
+git add file.txt
+git commit -m "second commit"
+```
+
+现在：
+
+- `HEAD` 指向 **第二次提交**
+
+- `file.txt` 内容是：
+
+  ```
+  arduinoCopyEditfirst line
+  second line
+  ```
+
+👇 假设现在你执行：
+
+```
+
+git reset --soft HEAD~1
+```
+
+| 区域   | 说明                              |
+| ------ | --------------------------------- |
+| HEAD   | ⬅️ 回退到第一次提交                |
+| index  | ✅ 暂存区 **保留第二次提交的内容** |
+| 工作区 | ✅ 你看到的文件内容 **还是有两行** |
+
+
+
+👉 意思是：**只是撤回了提交，文件改动还在，并且还在 `add` 状态**
+
+你可以直接：
+
+```
+
+git commit -m "修改过的提交信息"
+```
+
+来改写刚才的提交。
+
+👇 如果你执行：
+
+```
+bash
+
+git reset --mixed HEAD~1
+```
+
+| 区域   | 说明                                        |
+| ------ | ------------------------------------------- |
+| HEAD   | ⬅️ 回退到第一次提交                          |
+| index  | ❌ 暂存区清空（也就是撤回 `git add` 的效果） |
+| 工作区 | ✅ 文件内容还是两行                          |
+
+
+
+👉 意思是：你撤回了提交，也撤回了 `add`，但改动还在文件里
+ 你需要重新 `git add file.txt` 才能再提交
+
+👇 如果你执行：
+
+```
+
+git reset --hard HEAD~1
+```
+
+| 区域   | 说明                                              |
+| ------ | ------------------------------------------------- |
+| HEAD   | ⬅️ 回退到第一次提交                                |
+| index  | ❌ 暂存区恢复到第一次提交的状态（不包含第二行）    |
+| 工作区 | ❌ 你看到的文件也只剩下 `first line`（第二行丢失） |
+
+
+
+👉 意思是：**提交、暂存、工作区，全都退回去了，第二次提交的改动丢了**
+
+
+
+### 2.工作区和暂存区
+
+
+
+工作区是.git 存在的文件夹  
+
+
+
+。git(是版本库)  包含
+
+​	stage 暂存区
+
+​	master 创建的一个分支（并由一个指向master的指针）
+
+
+
+![git-repo](https://liaoxuefeng.com/books/git/time-travel/working-stage/repo.png)
+
+```c
+git  add //添加到暂存区  stage
+```
+
+```c
+git commit //将暂存区提交到分支
+```
+
+所以，`git add`命令实际上就是把要提交的所有修改放到暂存区（Stage），然后，执行`git commit`就可以一次性把暂存区的所有修改提交到分支。
+
+![git-stage-after-commit](https://liaoxuefeng.com/books/git/time-travel/working-stage/commit.png)
+
+### 3.管理修改
+
+跟踪管理的是修改   而不是文件
+
+那怎么提交第二次修改呢？你可以继续`git add`再`git commit`，也可以别着急提交第一次修改，先`git add`第二次修改，再`git commit`，就相当于把两次修改合并后一块提交了：
+
+第一次修改 -> `git add` -> 第二次修改 -> `git add` -> `git commit`
+
+好，现在，把第二次修改提交了，然后开始小结。
+
+
+
+### 4. 撤销修改
+
+总之，就是让这个文件回到最近一次`git commit`或`git add`时的状态。
+
+```c
+git checkout -- file
+```
+
+撤销在文件区的修改
+
+命令`git checkout -- readme.txt`意思就是，把`readme.txt`文件在工作区的修改全部撤销，这里有两种情况：
+
+一种是`readme.txt`自修改后还没有被放到暂存区，现在，撤销修改就回到和版本库一模一样的状态；
+
+一种是`readme.txt`已经添加到暂存区后，又作了修改，现在，撤销修改就回到添加到暂存区后的状态。
+
+
+
+
+
+`git checkout -- file`命令中的`--`很重要，没有`--`，就变成了“切换到另一个分支”的命令，我们在后面的分支管理中会再次遇到`git checkout`命令。
+
+
+
+Git同样告诉我们，用命令`git reset HEAD <file>`可以把暂存区的修改撤销掉（unstage），重新放回工作区：
+
+```c
+git reset HEAD file //对单个文件的操作 把 readme.txt 从 暂存区（stage/index） 移除（回到工作区），但不会还原工作区的内容（不会改动你编辑的文件），所以只是“取消 add”了这个文件。
+it reset --mixed HEAD // 把所有暂存区的变更都撤销掉（即回退到 HEAD 指向的版本）， 但不会修改工作区内容（改过的文件内容还在），  也就是“取消 git add”。
+```
+
+`git reset`命令既可以回退版本，也可以把暂存区的修改回退到工作区。当我们用`HEAD`时，表示最新的版本。
+
+
+
+
+
+```c
+git reset HEAD readme.txt//现在暂存区是干净的，工作区有修改
+ git checkout -- readme.txt//丢弃工作区的修改 回到最近一一版的add / commit
+```
+
+场景1：当你改乱了工作区某个文件的内容，想直接丢弃工作区的修改时，用命令`git checkout -- file`。
+
+场景2：当你不但改乱了工作区某个文件的内容，还添加到了暂存区时，想丢弃修改，分两步，第一步用命令`git reset HEAD <file>`，就回到了场景1，第二步按场景1操作。
+
+### 5 删除文件  （本地删除了 本地仓库也得删除）
+
+```c
+rm file
+```
+
+这个时候，Git知道你删除了文件，因此，工作区和版本库就不一致了，
+
+现在你有两个选择，一是确实要从版本库中删除该文件，那就用命令`git rm`删掉，并且`git commit`：
+
+```c
+$ git rm test.txt
+rm 'test.txt'
+
+$ git commit -m "remove test.txt"
+[master d46f35e] remove test.txt
+ 1 file changed, 1 deletion(-)
+ delete mode 100644 test.txt
+
+```
+
+ 注意
+
+从来没有被添加到版本库就被删除的文件，是无法恢复的！
+
+## 6.远程仓库
+
+
+
+1. 第1步：创建SSH Key。在用户主目录下，看看有没有.ssh目录，如果有，再看看这个目录下有没有`id_rsa`和`id_rsa.pub`这两个文件，如果已经有了，可直接跳到下一步。如果没有，打开Shell（Windows下打开Git Bash），创建SSH Key：
+
+   
+
+   ```c
+   $ ssh-keygen -t rsa -C "youremail@example.com"
+   ```
+
+   
+
+2. 登陆GitHub，打开“Account settings”，“SSH Keys”页面：
+
+   然后，点“Add SSH Key”，填上任意Title，在Key文本框里粘贴`id_rsa.pub`文件的内容
+
+### 1. 添加远程仓库
+
+1. 创建远程仓库
+
+   ![github-create-repo-1](https://liaoxuefeng.com/books/git/remote/add-remote/new-repo.png)
+
+2. 在本地工作区关联远程仓库
+
+   ```c
+   
+   git remote add origin git@。。。。
+   ```
+
+3. 推送 
+
+   把本地库的内容推送到远程，用`git push`命令，实际上是把当前分支`master`推送到远程。
+
+   ```c
+   git push -u origin master
+   
+   ```
+
+4. 删除远程仓库 
+
+   如果添加的时候添加错了  像删除
+
+   ```c
+   git remot -v //查看
+   ```
+
+   
+
+删除远程库
+
+如果添加的时候地址写错了，或者就是想删除远程库，可以用`git remote rm <name>`命令。使用前，建议先用`git remote -v`查看远程库信息：
+
+```c
+$ git remote -v
+origin  git@github.com:michaelliao/learn-git.git (fetch)
+origin  git@github.com:michaelliao/learn-git.git (push)
+```
+
+
+
+然后，根据名字删除，比如删除`origin`：
+
+```c
+$ git remote rm origin
+```
+
+
+
+此处的“删除”其实是解除了本地和远程的绑定关系，并不是物理上删除了远程库。远程库本身并没有任何改动。要真正删除远程库，需要登录到GitHub，在后台页面找到删除按钮再删除。
+
+小结
+
+要关联一个远程库，使用命令`git remote add origin git@server-name:path/repo-name.git`；
+
+关联一个远程库时必须给远程库指定一个名字，`origin`是默认习惯命名；
+
+关联后，使用命令`git push -u origin master`第一次推送`master`分支的所有内容；
+
+此后，每次本地提交后，只要有必要，就可以使用命令`git push origin master`推送最新修改；
+
+### 2. 从远程仓库克隆
+
+
+
+## 7.分支管理
+
+
+
+
+
+
 
