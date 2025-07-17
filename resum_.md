@@ -4651,71 +4651,419 @@ $ git remote rm origin
 
 ## 7.分支管理
 
-现在有了分支，就不用怕了。你创建了一个属于你自己的分支，别人看不到，还继续在原来的分支上正常工作，而你在自己的分支上干活，想提交就提交，直到开发完毕后，再一次性合并到原来的分支上，这样，既安全，又不影响别人工作。
-
-其他版本控制系统如SVN等都有分支管理，但是用过之后你会发现，这些版本控制系统创建和切换分支比蜗牛还慢，简直让人无法忍受，结果分支功能成了摆设，大家都不去用。
-
-但Git的分支是与众不同的，无论创建、切换和删除分支，Git在1秒钟之内就能完成！无论你的版本库是1个文件还是1万个文件。
+### 1. 创建与合并分支
 
 
 
-### 1. 分支的创建和合并
 
-在[版本回退](https://liaoxuefeng.com/books/git/time-travel/reset/index.html)里，你已经知道，每次提交，Git都把它们串成一条时间线，这条时间线就是一个分支。截止到目前，只有一条时间线，在Git里，这个分支叫主分支，即`master`分支。`HEAD`严格来说不是指向提交，而是指向`master`，`master`才是指向提交的，所以，`HEAD`指向的就是当前分支。
 
 一开始的时候，`master`分支是一条线，Git用`master`指向最新的提交，再用`HEAD`指向`master`，就能确定当前分支，以及当前分支的提交点：
 
-![image-20250717203826385](assets/image-20250717203826385.png)
+```
+                  HEAD
+                    │
+                    ▼
+                 master
+                    │
+                    ▼
+┌───┐    ┌───┐    ┌───┐
+│   │───▶│   │───▶│   │
+└───┘    └───┘    └───┘
+```
 
 每次提交，`master`分支都会向前移动一步，这样，随着你不断提交，`master`分支的线也越来越长。
 
 当我们创建新的分支，例如`dev`时，Git新建了一个指针叫`dev`，指向`master`相同的提交，再把`HEAD`指向`dev`，就表示当前分支在`dev`上：
 
+```
+                 master
+                    │
+                    ▼
+┌───┐    ┌───┐    ┌───┐
+│   │───▶│   │───▶│   │
+└───┘    └───┘    └───┘
+                    ▲
+                    │
+                   dev
+                    ▲
+                    │
+                  HEAD
+```
 
+你看，Git创建一个分支很快，因为除了增加一个`dev`指针，改改`HEAD`的指向，工作区的文件都没有任何变化！
 
-![image-20250717204051262](assets/image-20250717204051262.png)
+不过，从现在开始，对工作区的修改和提交就是针对`dev`分支了，比如新提交一次后，`dev`指针往前移动一步，而`master`指针不变：
 
-```c
-git  创建分支就是创建一个指针 指向当前master所指向，然后HEAD指向DEV
+```
+                 master
+                    │
+                    ▼
+┌───┐    ┌───┐    ┌───┐    ┌───┐
+│   │───▶│   │───▶│   │───▶│   │
+└───┘    └───┘    └───┘    └───┘
+                             ▲
+                             │
+                            dev
+                             ▲
+                             │
+                           HEAD
 ```
 
 假如我们在`dev`上的工作完成了，就可以把`dev`合并到`master`上。Git怎么合并呢？最简单的方法，就是直接把`master`指向`dev`的当前提交，就完成了合并：
 
-![image-20250717204138334](assets/image-20250717204138334.png)
+```
+                           HEAD
+                             │
+                             ▼
+                          master
+                             │
+                             ▼
+┌───┐    ┌───┐    ┌───┐    ┌───┐
+│   │───▶│   │───▶│   │───▶│   │
+└───┘    └───┘    └───┘    └───┘
+                             ▲
+                             │
+                            dev
+```
 
 所以Git合并分支也很快！就改改指针，工作区内容也不变！
 
+合并完分支后，甚至可以删除`dev`分支。删除`dev`分支就是把`dev`指针给删掉，删掉后，我们就剩下了一条`master`分支：
+
+```
+                           HEAD
+                             │
+                             ▼
+                          master
+                             │
+                             ▼
+┌───┐    ┌───┐    ┌───┐    ┌───┐
+│   │───▶│   │───▶│   │───▶│   │
+└───┘    └───┘    └───┘    └───┘
+```
+
+真是太神奇了，你看得出来有些提交是通过分支完成的吗？
+
+下面开始实战。
+
 ```c
-//创建分支
+//创建分支并进入
 git checkout -b dev
-//checkout  命令加上-b 表示创建分支并切换相当于以下两条命令
+git switch -c dev
+//等同于
 git branch dev
 git checkout dev
+
+
+
+```
+
+
+
+```c
+git branch
+
+```
+
+`it branch`命令会列出所有分支，当前分支前面会标一个`*`号。
+
+然后，我们就可以在`dev`分支上正常提交，
+
+
+
+```c
+//一定要  add  commit  不然会丢失
+git add
+
+git commit
+
+    
+//切换回master
+    
+git checkout master 
+git switch master
+//合并分支
+    
+git merge dev
+   
+    
+    
+//合并完分支后，甚至可以删除dev分支。删除dev分支就是把dev指针给删掉，删掉后，我们就剩下了一条master分支：
+git branch -d dev     
     
 ```
 
-```c
-//查看当前分支
-git branch 
+
+
+
+
+我们注意到切换分支使用`git checkout <branch>`，而前面讲过的撤销修改则是`git checkout -- <file>`，同一个命令，有两种作用，确实有点令人迷惑。
+
+
+
+实际上，切换分支这个动作，用`switch`更科学。因此，最新版本的Git提供了新的`git switch`命令来切换分支：
+
+创建并切换到新的`dev`分支，可以使用：
+
+  
+
+
+
+小结
+
+Git鼓励大量使用分支：
+
+查看分支：`git branch`
+
+创建分支：`git branch <name>`
+
+切换分支：`git checkout <name>`或者`git switch <name>`
+
+创建+切换分支：`git checkout -b <name>`或者`git switch -c <name>`
+
+合并某分支到当前分支：`git merge <name>`
+
+删除分支：`git branch -d <name>`
+
+
+
+### 2. 解决冲突
+
+
+
+当Git无法自动合并分支时，就必须首先解决冲突。解决冲突后，再提交，合并完成。
+
+解决冲突就是把Git合并失败的文件手动编辑为我们希望的内容，再提交。
+
+用`git log --graph`命令可以看到分支合并图。
+
+
+
+```
+//创建新分支  在新分支上
+git switch -c fu1
+echo >> "hello" hello.txt
+git add 
+git commit 
+git switch  master
+//正常merge
+git merge fu1
+//但是当还没有merge  接着修改hello.txt
+git add
+git commit 
+//现在，master分支和feature1分支各自都分别有新的提交，变成了这样：
+
+
 ```
 
-`git branch`命令会列出所有分支，当前分支前面会标一个`*`号。
+现在，`master`分支和`feature1`分支各自都分别有新的提交，变成了这样：
+
+```
+                            HEAD
+                              │
+                              ▼
+                           master
+                              │
+                              ▼
+                            ┌───┐
+                         ┌─▶│   │
+┌───┐    ┌───┐    ┌───┐  │  └───┘
+│   │───▶│   │───▶│   │──┤
+└───┘    └───┘    └───┘  │  ┌───┐
+                         └─▶│   │
+                            └───┘
+                              ▲
+                              │
+                          feature1
+```
+
+这种情况下，Git无法执行“快速合并”，只能试图把各自的修改合并起来，但这种合并就可能会有冲突，我们试试看：
+
+git merge fu1
+
+果然冲突了！Git告诉我们，`readme.txt`文件存在冲突，必须手动解决冲突后再提交。`git status`也可以告诉我们冲突的文件：
+
+```
+$ git status
+On branch master
+Your branch is ahead of 'origin/master' by 2 commits.
+  (use "git push" to publish your local commits)
+
+You have unmerged paths.
+  (fix conflicts and run "git commit")
+  (use "git merge --abort" to abort the merge)
+
+Unmerged paths:
+  (use "git add <file>..." to mark resolution)
+
+	both modified:   readme.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+```
+
+需要手动修改冲突的文件  然后保存
+
+![image-20250717214435479](assets/image-20250717214435479.png)
+
+用带参数的`git log`也可以看到分支的合并情况：
 
 
 
+```
+$ git log --graph --pretty=oneline --abbrev-commit
+```
 
 
-切换回`master`分支后，再查看一个`readme.txt`文件，刚才添加的内容不见了！因为那个提交是在`dev`分支上，而`master`分支此刻的提交点并没有变：
+
+```c
+//删除分支
+git branch -d fu1
+```
+
+小结
+
+当Git无法自动合并分支时，就必须首先解决冲突。解决冲突后，再提交，合并完成。
+
+解决冲突就是把Git合并失败的文件手动编辑为我们希望的内容，再提交。
+
+### 3. 分支管理策略
+
+通常，合并分支时，如果可能，Git会用`Fast forward`模式，但这种模式下，删除分支后，会丢掉分支信息。
+
+如果要强制禁用`Fast forward`模式，Git就会在merge时生成一个新的commit，这样，从分支历史上就可以看出分支信息。
+
+
+
+准备合并`dev`分支，请注意`--no-ff`参数，表示禁用`Fast forward`：
+
+```c
+$ git merge --no-ff -m "merge with no-ff" dev
+```
+
+
+
+![image-20250717214925333](assets/image-20250717214925333.png)
+
+
+
+```c
+$ git log --graph --pretty=oneline --abbrev-commit
+*   e1e9c68 (HEAD -> master) merge with no-ff
+|\  
+| * f52c633 (dev) add merge
+|/  
+*   cf810e4 conflict fixed
+...
+
+```
+
+分支策略
+
+首先，`master`分支应该是非常稳定的，也就是仅用来发布新版本，平时不能在上面干活；
+
+那在哪干活呢？干活都在`dev`分支上，也就是说，`dev`分支是不稳定的，到某个时候，比如1.0版本发布时，再把`dev`分支合并到`master`上，在`master`分支发布1.0版本；
+
+你和你的小伙伴们每个人都在`dev`分支上干活，每个人都有自己的分支，时不时地往`dev`分支上合并就可以了。
+
+ 
+
+
+
+小结
+
+Git分支十分强大，在团队开发中应该充分应用。
+
+合并分支时，加上`--no-ff`参数就可以用普通模式合并，合并后的历史有分支，能看出来曾经做过合并，而`fast forward`合并就看不出来曾经做过合并。
+
+
+
+### 4.Bug分支
+
+
+
+软件开发中，bug就像家常便饭一样。有了bug就需要修复，在Git中，由于分支是如此的强大，所以，每个bug都可以通过一个新的临时分支来修复，修复后，合并分支，然后将临时分支删除。
+
+当你接到一个修复一个代号101的bug的任务时，很自然地，你想创建一个分支`issue-101`来修复它，但是，等等，当前正在`dev`上进行的工作还没有提交：(  要离开当前分支   区master或者别的分支创建issue-101分支修复bug   但是当前的工作没做完 不想git add git commit  可以隐藏)
+
+并不是你不想提交，而是工作只进行到一半，还没法提交，预计完成还需1天时间。但是，必须在两个小时内修复该bug，怎么办？
+
+```
+幸好，Git还提供了一个stash功能，可以把当前工作现场“储藏”起来，等以后恢复现场后继续工作：
+git  stach
+```
+
+现在，用`git status`查看工作区，就是干净的（除非有没有被Git管理的文件），因此可以放心地创建分支来修复bug。
+
+
+
+首先确定要在哪个分支上修复bug，假定需要在`master`分支上修复，就从`master`创建临时分支：
 
 ```c
  git checkout master
+git checkout -b issue-101  //创建
+
+ git add readme.txt 
+ git commit -m "fix bug 101"
+ 
+ //修复完成后，切换到master分支，并完成合并，最后删除issue-101分支：
+ git switch master
+ git merge --no-ff -m "merged bug fix 101" issue-101
+ git branch -d issue-101 
+ 
+ //太棒了，原计划两个小时的bug修复只花了5分钟！现在，是时候接着回到dev分支干活了！
+ git switch dev
+ 
+ //工作区是干净的，刚才的工作现场存到哪去了？用git stash list命令看看：
+ git stash list
+ 
+ 
+ //工作现场还在，Git把stash内容存在某个地方了，但是需要恢复一下，有两个办法：一是用git stash apply恢复，但是恢复后，stash内容并不删除，你需要用git stash drop来删除；另一种方式是用git stash pop，恢复的同时把stash内容也删了：
+git stash pop
 
 ```
 
-![image-20250717205725524](assets/image-20250717205725524.png)
+
+
+```
+你可以多次stash，恢复的时候，先用git stash list查看，然后恢复指定的stash，用命令：
+$ git stash list
+
+$ git stash apply stash@{0}
+
+```
+
+在`master`分支上修复了bug后，我们要想一想，`dev`分支是早期从`master`分支分出来的，所以，这个bug其实在当前`dev`分支上也存在。
+
+那怎么在`dev`分支上修复同样的bug？重复操作一次，提交不就行了？
+
+有木有更简单的方法？
+
+
+
+同样的bug，要在`dev`上修复，我们只需要把`4c805e2 fix bug 101`这个提交所做的修改“复制”到`dev`分支。注意：我们只想复制`4c805e2 fix bug 101`这个提交所做的修改，并不是把整个`master`分支merge过来。
+
+为了方便操作，Git专门提供了一个`cherry-pick`命令，让我们能复制一个特定的提交到当前分支：
 
 ```c
-//合并
-git merge dev
+git branch
+* dev
+  master
+git cherry-pick 4c805e2
 ```
 
+Git自动给`dev`分支做了一次提交，注意这次提交的commit是`1d4b803`，它并不同于`master`的`4c805e2`，因为这两个commit只是改动相同，但确实是两个不同的commit。用`git cherry-pick`，我们就不需要在`dev`分支上手动再把修bug的过程重复一遍。
+
+
+
+
+
+有些聪明的童鞋会想了，既然可以在`master`分支上修复bug后，在`dev`分支上可以“重放”这个修复过程，那么直接在`dev`分支上修复bug，然后在`master`分支上“重放”行不行？当然可以，不过你仍然需要`git stash`命令保存现场，才能从`dev`分支切换到`master`分支。
+
+
+
+修复bug时，我们会通过创建新的bug分支进行修复，然后合并，最后删除；
+
+当手头工作没有完成时，先把工作现场`git stash`一下，然后去修复bug，修复后，再`git stash pop`，回到工作现场；
+
+在`master`分支上修复的bug，想要合并到当前`dev`分支，可以用`git cherry-pick <commit>`命令，把bug提交的修改“复制”到当前分支，避免重复劳动。
