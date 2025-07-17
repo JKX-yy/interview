@@ -2108,7 +2108,7 @@ s.insert(s.begin() + 2, t.begin(), t.end());  // heXXllo
 | 0    | string         |                        | char*                          | 增：s.insert, s.append   删：s.erase   改：是。replace(),s.assing(),查：find()   ,其他s.substr(),s.size(),at(),[] |
 | 1    | vector         | 动态分配的数组         | 顺序数组（array）              | `v.push_back()`, `v.pop_back()`, `v.insert()`, `v.erase()`, `v.capacity()`, `v.size()`, `v.at(idx)`, `v.front()`, `v.back()  ,v.reserve(),v.swap() ,v.resize()，v.assgin(),v.empty()，` |
 | 5    | deque          | 双端队列,双端数组      | 分段连续（多个 `vector` 连续） | `d.push_back()`, `d.push_front()`, `d.pop_back()`, `d.pop_front()`, `d.insert()`, `d.erase()  ,d.assgin()/d.empty()/d.size()/d.resize()/容器没有容量的概念，。at(),[],/ d.front()/d.back()/sort()` |
-| *    | ****           | ***                    | ****                           | **下面是非随机访问的容器  不可以随即插入删除**               |
+| *    | ****           | ***                    | ****                           | **下面是非随机访问的容器  不可以随即插入删除没有at  []**     |
 | 2    | list           | 双向链表               | 离散                           | `lt.push_back()`, `lt.push_front()`, `lt.insert()`, `lt.erase()`, `lt.sort()`, `lt.merge()`, `lt.splice()  ，assgin()  swap()  size()  empty  resize(),  remove(),clear(),reverse(), ` |
 | 3    | stack          | 栈                     | 用 `list` 或 `deque` 实现0     | `push()`, `pop()`, `top()  empty(),size(),`，                |
 | 4    | queue          | 队列(不允许有遍历行为) | 用 `list` 或 `deque` 实现      | `push()`, `pop()`, `front()`, `back()  empty()  size()`  ，  |
@@ -2275,6 +2275,21 @@ set不可以插入重复数据，而multiset可以
 set插入数据的同时会返回插入结果，表示插入是否成功
 
 multiset不会检测数据，因此可以插入重复数据
+
+
+
+
+
+三、红黑树 vs 哈希表：对比总结
+
+| 特性       | 红黑树             | 哈希表                    |
+| ---------- | ------------------ | ------------------------- |
+| 查找效率   | O(log n)           | 平均 O(1)，最坏 O(n)      |
+| 有序性     | ✅（支持范围查找）  | ❌（无序）                 |
+| 内存利用   | 高（无扩容）       | 可能有大量空槽或链表      |
+| 扩展性     | 不需要扩容         | 容量需手动扩容/自动扩容   |
+| 并发友好性 | 相对较难           | Java 有 ConcurrentHashMap |
+| 常用用途   | 有序映射，区间查询 | 快速查找，键值缓存        |
 
 #### 对组 pair
 
@@ -3496,135 +3511,171 @@ private:
 
 
 ```c++
+
 #include <iostream>
+#include <thread>  
+#include <functional>  //函数模板  bind
 #include <vector>
-#include <thread>
 #include <queue>
-#include <functional>
 #include <mutex>
 #include <condition_variable>
-#include <memory>
-#include <chrono>
+#include <memory>  //unique_ptr shared_ptr
+#include <chrono>  //时间   
+using namespace std;
+//手撕线程池   
+/*
+生产者消费者模型    
+线程池有多个创建的线程  等待任务队列里有任务就去执行，这个有谁执行是不确定的 
+生产者负责向任务队列里添加任务，消费者负责从任务队列里取任务执行
 
-class ThreadPool {
+
+线程池是全局唯一一个unique_ptr    只初始化一次once_call();，后续调用仍然还是同一个线程池 ，所以需要用单例模式  
+*/
+
+
+class ThreadPool { 
 public:
-    // 获取单例实例
-    static ThreadPool& getInstance(size_t numThreads = 4) {
-        static std::once_flag onceFlag;
-        static std::unique_ptr<ThreadPool> instance;
-        
-        // 保证线程安全地初始化单例
-        std::call_once(onceFlag, [numThreads]() {
-            instance.reset(new ThreadPool(numThreads));
+    //首先  创建单例模式  （在单例模式中创建线程池 保障只初始化一次  返回创建的线程池对象指针）
+    // 获取线程池单例对象（懒汉式单例，线程安全）
+    static ThreadPool& getInstance(size_t number_thread=4)  //static保证外部main可以调用
+    {
+        static once_flag flag;  //once_flag是一个标志位，表示是否已经执行过某个操作
+        static unique_ptr<ThreadPool> instance;  //创建一个空的  使用unique_ptr管理ThreadPool的生命周期
+
+        call_once(flag,[number_thread](){
+            instance.reset(new ThreadPool(number_thread));  //创建线程池实例 释放当前对象并管理新的对象
+
         });
-        
-        return *instance;
+        return *instance;  //返回线程池实例的引用
     }
 
-    // 禁用拷贝和赋值
-    ThreadPool(const ThreadPool&) = delete;
-    ThreadPool& operator=(const ThreadPool&) = delete;
+    //禁用拷贝构造
+    ThreadPool(const ThreadPool& )=delete;
+    //禁用赋值构造
+    ThreadPool& operator=(const ThreadPool& )=delete;
 
-    // 添加任务到线程池
-    template<class F, class... Args>
-    void enqueue(F&& f, Args&&... args) {
-        auto task = std::make_shared<std::function<void()>>(
-            std::bind(std::forward<F>(f), std::forward<Args>(args)...)
-        );
-        
+
+    
+    //析构函数
+    ~ThreadPool()
+    {
         {
-            std::unique_lock<std::mutex> lock(mtx);
-            tasks.emplace([task]() { (*task)(); });
+            unique_lock<mutex> lock(m_mutex);
+            stop = true;  //设置停止标志
         }
-        
-        condition.notify_one();
-    }
 
-private:
-    // 私有构造函数
-    explicit ThreadPool(size_t numThreads) : stop(false) {
-        for (size_t i = 0; i < numThreads; ++i) {
-            // 使用智能指针管理线程
-            threads.emplace_back([this] {
-                while (true) {
-                    std::function<void()> task;
-
-                    {
-                        std::unique_lock<std::mutex> lock(mtx);
-                        condition.wait(lock, [this] {
-                            return !tasks.empty() || stop;
-                        });
-
-                        if (stop && tasks.empty()) {
-                            return;
-                        }
-
-                        task = std::move(tasks.front());
-                        tasks.pop();
-                    }
-
-                    task();
-                }
-            });
-        }
-    }
-
-    // 析构函数
-    ~ThreadPool() {
+        cond.notify_all();  //通知所有等待的线程，线程池即将停止
+        for(auto &t: threads)  //遍历线程池中的所有线程
         {
-            std::unique_lock<std::mutex> lock(mtx);
-            stop = true;
-        }
-        
-        condition.notify_all();
-        
-        for (auto& thread : threads) {
-            if (thread.joinable()) {
-                thread.join();
+            if(t.joinable())  //如果线程可连接
+            {
+                t.join();  //等待线程结束
             }
         }
+        cout << "ThreadPool destroyed" << endl;  //输出线程池销毁信息
     }
 
-    std::vector<std::thread> threads;       // 工作线程集合
-    std::queue<std::function<void()>> tasks; // 任务队列
-    std::mutex mtx;                         // 互斥锁
-    std::condition_variable condition;      // 条件变量
-    bool stop;                              // 停止标志
+    //添加任务队列函数
+    template<class T, class ...Args>
+    void addtask(T&&task,Args&&...args)
+    {
+        function<void()> func=bind(forward<T>(task),forward<Args>(args)...);  //使用bind将任务和参数绑定到一个函数对象上
+        {
+            //加锁区   要修改等待队列了
+            unique_lock<mutex> lock(m_mutex);  //使用unique_lock来管理互斥锁的生命周期
+            tasks.emplace(move(func));  //将函数对象添加到任务队列中
+
+        }
+        cond.notify_one();  //通知一个等待的线程，任务队列中有新任务
+    }
+    private:
+
+    
+    //默认构造函数  explicit 的作用是防止构造函数或转换函数被隐式调用，从而避免意外的隐式类型转换。
+    /*
+        Test t1(10);  // 正确：显式调用构造函数
+       Test t2 = 10;  // 错误：隐式调用被禁止，因为构造函数是 explicit
+
+    */
+    explicit ThreadPool(size_t number_thread): stop(false) //在线程池里面创建线程 几个线程
+    {
+        for(int i=0;i<number_thread;i++)
+        {
+            threads.emplace_back([this](){
+                while(1)
+                {
+                    //获取锁 
+                    unique_lock<std::mutex> lock(m_mutex);  //使用unique_lock来管理互斥锁的生命周期
+                    cond.wait(lock,[this](){
+                        return !tasks.empty() || stop;  //等待条件变量，直到任务队列不为空或线程池停止
+                    });
+                    if(stop && tasks.empty())  //如果线程池停止且任务队列为空，退出线程
+                    {
+                        return;
+                    }
+                    //从任务队列中取出任务
+                    function<void()>  task(move(tasks.front()));  //这里创建了一个新的 std::function<void()> 对象 task，并将 tasks.front() 的内容移动到它中。
+                    tasks.pop();
+                    lock.unlock();  //解锁互斥锁，允许其他线程访问任务队列
+                    //执行任务
+                    task();  //执行任务函数对象
+                 
+                }
+
+
+
+            });
+        }
+
+    }
+
+
+    mutex m_mutex;  //互斥锁
+    condition_variable cond;  //条件变量
+    queue<function<void()>> tasks;  //任务队列，存储函数对象
+    vector<thread> threads;  //线程池，存储工作线程
+    bool stop;  //标志线程池是否停止
 };
 
 // 示例任务函数
-void taskFunction(int id) {
+void func(int id) {
     std::cout << "任务 " << id << " 开始执行，线程ID: " 
               << std::this_thread::get_id() << std::endl;
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    std::this_thread::sleep_for(std::chrono::seconds(1)); // 模拟耗时任务
+
     std::cout << "任务 " << id << " 完成" << std::endl;
 }
 
 int main() {
-    // 获取线程池单例
-    ThreadPool& pool = ThreadPool::getInstance(4);
 
-    // 添加10个任务
-    for (int i = 0; i < 10; ++i) {
-        pool.enqueue(taskFunction, i);
+    ThreadPool &pool=ThreadPool::getInstance(5);//获取线程池单例对象  只有首次会被构建
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    for(int i=10;i>0;i--)
+    {
+        pool.addtask(func,i);  //添加任务到线程池
         std::cout << "已添加任务 " << i << std::endl;
     }
 
-    // 等待所有任务完成
+      // 主线程等待部分任务完成（实际情况应使用同步机制）
     std::cout << "主线程等待任务完成..." << std::endl;
-    std::this_thread::sleep_for(std::chrono::seconds(3));
+    std::this_thread::sleep_for(std::chrono::seconds(10));
 
-    // 再次使用同一个线程池实例
+  // 再次获取相同的线程池实例（证明单例有效）
     ThreadPool& samePool = ThreadPool::getInstance();
-    samePool.enqueue([](){
-        std::cout << "这是另一个任务" << std::endl;
+
+    samePool.addtask([](){
+        std::cout << "再次添加任务" << std::endl;
     });
 
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    std::this_thread::sleep_for(std::chrono::seconds(5));
     std::cout << "程序结束" << std::endl;
+
 
     return 0;
 }
+
+
 ```
 
 行解释
@@ -3664,7 +3715,325 @@ Main函数使用说明
 3. 多次调用`getInstance()`返回的是同一个实例
 4. 程序结束时自动清理线程池资源
 
+✅ 总结：`unique_ptr` + `call_once` 单例模式优势
 
+| 特性       | 说明                                      |
+| ---------- | ----------------------------------------- |
+| 延迟初始化 | 第一次用到时才创建对象                    |
+| 线程安全   | `std::call_once` 保证只初始化一次         |
+| 无内存泄漏 | `unique_ptr` 自动释放对象                 |
+| 禁止拷贝   | `unique_ptr` 语义匹配单例“不允许复制”设计 |
+| 易于维护   | 不需要手动 delete，析构自动完成           |
+
+
+
+#### 12  .async future packaged_task  promise  异步并发  获得线程的返回值
+
+
+
+##### 1. async  future
+
+![image-20250717112818380](assets/image-20250717112818380.png)
+
+
+
+![image-20250717113013558](assets/image-20250717113013558.png)
+
+![image-20250717113251218](assets/image-20250717113251218-1752723172713-1.png)
+
+```c++
+future<int> future_res=async(launch::asunc,func); //当func传给async时func已经在后台运行可以看成一个线程  不阻塞  在后台运行，返回的结果存在 future_res  。
+
+cout<< future_res.get()<<endl;    //可能早就运行完了  取结果，没运行完就等待结果
+
+```
+
+这个例子中，我们使用std:async函数异步执行了一个耗时的计算，这个计算可以在另一个
+线程中执行，不会阻塞主线程。同时，我们也避免了手动创建线程和管理线程的麻烦。
+
+
+
+```
+
+```
+
+
+
+在 C++ 中，`std::async` 和 `std::future` 是用于实现 **异步任务调度与结果获取** 的标准库组件。下面我将具体解释它们的含义、使用方式、底层原理，以及与线程池的对比。
+
+
+
+
+
+一、基本概念
+
+1. `std::async`
+
+`std::async` 会启动一个异步任务，可能在新线程中运行，也可能在调用线程中延迟运行（lazy evaluation），由策略决定。
+
+```
+cppCopyEdit#include <iostream>
+#include <future>
+
+int compute(int x) {
+    return x * x;
+}
+
+int main() {
+    std::future<int> fut = std::async(std::launch::async, compute, 10);
+    // 可做其他事情
+    int result = fut.get();  // 阻塞，直到compute完成并返回结果
+    std::cout << "Result: " << result << std::endl;
+}
+```
+
+2. `std::future`
+
+`std::future<T>` 是一个对象，表示一个 **异步计算操作的结果**。你可以通过 `.get()` 方法来获取结果（如果结果还没出来，它会阻塞）。
+
+
+
+##### 2.packaged_task  
+
+![image-20250717114106929](assets/image-20250717114106929.png)
+
+packaged_task  生成一个可调用对象
+
+```c++
+packaged_task<int()> task(func);   //包装 生成可调用对象  
+auto future_res=task.get_future();  //  返回一个future对象
+```
+
+![image-20250717114645288](assets/image-20250717114645288.png)
+
+
+
+##### 3.promise  
+
+是一个类模板  用于在一个线程中产生之，在另一个线程中获取值，promise通常与async一起使用，用于实现异步编程
+
+![image-20250717115037939](assets/image-20250717115037939.png)
+
+![image-20250717115417201](assets/image-20250717115417201.png)
+
+ 
+
+```c++
+#include <iostream>
+#include <thread>
+#include <future>
+using namespace std;
+
+/*
+
+
+1. std::promise 和 std::future
+std::promise<T>：用于在一个线程中设置值
+
+std::future<T>：用于在另一个线程中获取该值
+
+它们之间通过一个共享状态通信。
+*/
+void producer(promise<int> prom)
+{
+    this_thread::sleep_for(chrono::seconds(1));
+    prom.set_value(10);  //设置promise的值
+}
+
+void comsumer(future<int> fu)
+{
+    int ret=fu.get(); //会阻塞等待promise设置值   用于同步
+    cout<<"ret:"<<ret<<endl;
+}
+
+int main()
+{
+    promise<int> prom;
+    future<int> fu=prom.get_future();
+
+    thread t1(producer , std::move(prom));
+    thread t2(comsumer, std::move(fu));
+
+    t1.join();
+    t2.join();
+
+return 0;
+
+}
+
+
+```
+
+
+
+2. std::async
+std::async 创建一个任务，该任务在后台自动创建线程或延迟调用。
+
+返回一个 std::future<T>，通过它可以获取任务的返回值。
+
+```c++
+
+#include <iostream>
+#include <future>
+
+int task(int x)
+{
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    return x * 2;
+}
+
+int main()
+{
+    std::future<int> fut = std::async(std::launch::async, task, 21);
+    std::cout << "等待结果...\n";
+    std::cout << "结果是: " << fut.get() << std::endl;
+}
+```
+
+三者结合使用：promise + future + async
+
+我们可以结合使用 `promise` 与 `future`，并通过 `async` 创建异步任务，完成一个线程间数据传递+异步计算的场景：
+
+✅ 示例：main 线程准备数据 -> 异步线程处理 -> 返回处理结果
+
+```c++
+#include <iostream>
+#include <future>
+#include <thread>
+
+// 异步任务，等待主线程传来的值
+void worker(std::future<int> fut, std::promise<int> prom)
+{
+    int x = fut.get(); // 从主线程接收数据
+    int result = x * 10;
+    prom.set_value(result); // 将结果返回给主线程
+}
+
+int main()
+{
+    std::promise<int> input_prom;
+    std::future<int> input_fut = input_prom.get_future();
+
+    std::promise<int> result_prom;
+    std::future<int> result_fut = result_prom.get_future();
+
+    // 异步任务（也可以用 std::thread）
+    std::thread t(worker, std::move(input_fut), std::move(result_prom));
+
+    // 主线程向异步线程发送数据
+    input_prom.set_value(7);
+
+    // 主线程获取异步线程返回的结果
+    int result = result_fut.get();
+    std::cout << "处理结果: " << result << std::endl;
+
+    t.join();
+}
+
+```
+
+总结对比：
+
+| 机制           | 用途                         | 特点                          |
+| -------------- | ---------------------------- | ----------------------------- |
+| `std::promise` | 设置异步结果（由生产者线程） | 与 `future` 一对一绑定        |
+| `std::future`  | 获取异步结果（由消费者线程） | `get()` 会阻塞直到有结果      |
+| `std::async`   | 自动创建异步任务             | 返回一个 future；线程自动管理 |
+
+####  13.原子操作   atomic
+
+和互斥锁  全局共享变量
+
+
+
+std:atomic是C++11标准库中的一个模板类，用于实现多线程环境下的原子操作。它
+提供了一种线程安全的方式来访问和修改共享变量，可以避免多线程环境中的数据竞争问
+题。
+
+
+
+![image-20250717121442696](assets/image-20250717121442696.png)
+
+```c++
+#include<atomic>
+atomic<int> shared_data=0;
+
+
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <atomic>
+
+std::atomic<int> shared_data = 0;
+void func() {
+    for (int i = 0; i < 100000; ++i) {
+    ______
+    shared_data++;
+    }
+}
+
+int main() {
+    std::thread t1(func);
+    std::thread t2(func);
+    t1.join();
+    t2.join();
+    std::cout << "shared_data = " << shared_data << std::endl;
+    return 0;
+}
+```
+
+![image-20250717122035760](assets/image-20250717122035760.png)
+
+🧱 二、常见操作
+
+✅ 原子读写
+
+```
+cppCopyEditstd::atomic<int> x(0);
+x = 5;              // 原子写
+int y = x.load();   // 原子读
+```
+
+✅ 原子加减
+
+```
+cppCopyEditx++;                // 原子加一
+x.fetch_add(2);     // 加2，返回修改前的值
+x.fetch_sub(1);     // 减1，返回修改前的值
+```
+
+✅ compare_exchange
+
+这是 **无锁编程核心操作**，实现类似乐观锁的机制：
+
+```
+cppCopyEditint expected = 5;
+if (x.compare_exchange_strong(expected, 10)) {
+    // 成功：x 原本是 5，现在改成 10
+} else {
+    // 失败：x 当前不是 5，expected 被更新为 x 的当前值
+}
+```
+
+🚥 三、memory_order 内存序（可选高级用法）
+
+- `memory_order_relaxed`: 最弱顺序，仅保证原子性。
+- `memory_order_acquire / release`: 用于单向同步。
+- `memory_order_seq_cst`: 默认，最强顺序，保证所有线程对原子变量的操作具有全序一致性。
+
+```
+cppCopyEditx.store(1, std::memory_order_release);
+int y = x.load(std::memory_order_acquire);
+```
+
+📌 小结
+
+| 操作                 | 方法或语法                     |
+| -------------------- | ------------------------------ |
+| 原子读写             | `.load()`, `.store()`          |
+| 原子加/减            | `.fetch_add()`, `.fetch_sub()` |
+| 自增自减             | `++x`, `--x`                   |
+| CAS 操作（比较交换） | `.compare_exchange_strong()`   |
 
 
 
