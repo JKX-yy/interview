@@ -1,4 +1,4 @@
-# 1. C++基础（）（）
+# 1. C++基础
 
 ###  1.智能指针
 
@@ -223,7 +223,7 @@ void do_trans_cue(const unique_ptr<cat> &c)//引用不涉及所有权转移
 }
 
 unique_ptr retern_()
-
+{
     unique_ptr<cat>  c=make_unique<cat>("c");
     return c;
 }
@@ -5473,7 +5473,7 @@ git tag -d v1.0 //如果标签打错了，也可以删除
 
 **场景：修复旧版本 `v1.0.0` 的 Bug**
 
-1. **查看标签**：（）
+1. **查看标签**：
 
    bash
 
