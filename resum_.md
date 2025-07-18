@@ -3744,7 +3744,9 @@ Main函数使用说明
 ```c++
 future<int> future_res=async(launch::asunc,func); //当func传给async时func已经在后台运行可以看成一个线程  不阻塞  在后台运行，返回的结果存在 future_res  。
 
-cout<< future_res.get()<<endl;    //可能早就运行完了  取结果，没运行完就等待结果
+cout<< future_res.get()<<endl;    //可能早就运行完了  取结果，没运行完就等待结果  也就是说，它会**“死等”**，一直等 func 执行完成。
+
+
 
 ```
 
@@ -3904,7 +3906,7 @@ int main()
 // 异步任务，等待主线程传来的值
 void worker(std::future<int> fut, std::promise<int> prom)
 {
-    int x = fut.get(); // 从主线程接收数据
+    int x = fut.get(); // 从主线程接收数据  死等
     int result = x * 10;
     prom.set_value(result); // 将结果返回给主线程
 }
@@ -3920,6 +3922,8 @@ int main()
     // 异步任务（也可以用 std::thread）
     std::thread t(worker, std::move(input_fut), std::move(result_prom));
 
+    
+    
     // 主线程向异步线程发送数据
     input_prom.set_value(7);
 
@@ -3931,6 +3935,28 @@ int main()
 }
 
 ```
+
+因为这两个类型：
+
+```
+cppCopyEditstd::future<int>
+std::promise<int>
+```
+
+都**不能被拷贝（copy）**，只能被**移动（move）**！
+
+✅ 1. `std::future` 和 `std::promise` 是 **不可拷贝的（deleted copy constructor）**
+
+```
+cppCopyEditstd::future<int> f1 = f2;  // ❌ 编译错误！
+std::promise<int> p1 = p2; // ❌ 编译错误！
+```
+
+它们内部维护着同步状态和共享状态指针，为了避免误用和数据冲突，标准库禁止你拷贝它们。
+
+
+
+
 
 总结对比：
 
@@ -4382,7 +4408,7 @@ git commit -m "second commit"
 - `file.txt` 内容是：
 
   ```
-  arduinoCopyEditfirst line
+  first line
   second line
   ```
 
@@ -4530,13 +4556,41 @@ it reset --mixed HEAD // 把所有暂存区的变更都撤销掉（即回退到 
 
 
 ```c
-git reset HEAD readme.txt//现在暂存区是干净的，工作区有修改
+//现在暂存区是干净的，工作区有修改
  git checkout -- readme.txt//丢弃工作区的修改 回到最近一一版的add / commit
 ```
 
 场景1：当你改乱了工作区某个文件的内容，想直接丢弃工作区的修改时，用命令`git checkout -- file`。
 
 场景2：当你不但改乱了工作区某个文件的内容，还添加到了暂存区时，想丢弃修改，分两步，第一步用命令`git reset HEAD <file>`，就回到了场景1，第二步按场景1操作。
+
+
+
+```
+git reset HEAD file  //针对撤销add  没有完成commit
+
+*********************下面的三种针对完成  工作区修改+add+commit****************
+git reset --hard HEAD^   //完全清空  工作区+暂存区+HEAD移动
+git reset --soft  HEAD^
+git reset  --mixed HEAD^ 
+```
+
+🧠 总结对比表
+
+| 命令                         | HEAD 移动 | 暂存区变化          | 工作区变化         | 备注                     |
+| ---------------------------- | --------- | ------------------- | ------------------ | ------------------------ |
+| `git reset HEAD <file>`      | ❌         | 将文件 unstage      | ❌ 保留修改         | 用于取消 `git add`       |
+| `git reset --soft <commit>`  | ✅         | 不变（保留 staged） | ❌ 保留修改         | 改动仍在暂存区           |
+| `git reset --mixed <commit>` | ✅         | 清空暂存区          | ❌ 保留修改         | 默认行为，改动仍可见     |
+| `git reset --hard <commit>`  | ✅         | 清空                | ❌ 清空（还原文件） | 改动彻底丢失，请谨慎使用 |
+
+
+
+
+
+
+
+
 
 ### 5 删除文件  （本地删除了 本地仓库也得删除）
 
@@ -4608,7 +4662,7 @@ $ git commit -m "remove test.txt"
    如果添加的时候添加错了  像删除
 
    ```c
-   git remot -v //查看
+   git remote -v //查看
    ```
 
    
@@ -4839,7 +4893,7 @@ Git鼓励大量使用分支：
 
 
 
-```
+```c
 //创建新分支  在新分支上
 git switch -c fu1
 echo >> "hello" hello.txt
@@ -5000,7 +5054,11 @@ git  stach
 首先确定要在哪个分支上修复bug，假定需要在`master`分支上修复，就从`master`创建临时分支：
 
 ```c
- git checkout master
+//在dev分支暂存  把当前工作区和暂存区的改动都保存到一个“临时堆栈”里；当前分支（比如 dev）的状态会恢复成干净状态；改动内容不会丢，只是临时藏起来了。
+git stash  //git stash save "name"  当前在 dev 分支，保存当前工作现场
+    
+//# 切换到 master，修复 bug
+git checkout master
 git checkout -b issue-101  //创建
 
  git add readme.txt 
@@ -5019,17 +5077,24 @@ git checkout -b issue-101  //创建
  
  
  //工作现场还在，Git把stash内容存在某个地方了，但是需要恢复一下，有两个办法：一是用git stash apply恢复，但是恢复后，stash内容并不删除，你需要用git stash drop来删除；另一种方式是用git stash pop，恢复的同时把stash内容也删了：
-git stash pop
+git stash pop  
 
+// 把 master 上的修复同步进 dev
+git cherry-pick <修复的 commit hash>
 ```
 
 
 
-```
-你可以多次stash，恢复的时候，先用git stash list查看，然后恢复指定的stash，用命令：
+```c
+//你可以多次stash，恢复的时候，先用git stash list查看，然后恢复指定的stash，用命令：
 $ git stash list
 
-$ git stash apply stash@{0}
+    /*
+stash@{0}: On dev: save dev wip
+stash@{1}: On main: fix bug
+    */
+    
+$ git stash apply stash@{0}  //回复指定版本
 
 ```
 
@@ -5049,7 +5114,7 @@ $ git stash apply stash@{0}
 git branch
 * dev
   master
-git cherry-pick 4c805e2
+git cherry-pick 4c805e2 //commit id  Git自动给`dev`分支做了一次提交，注意这次提交的commit是`1d4b803`
 ```
 
 Git自动给`dev`分支做了一次提交，注意这次提交的commit是`1d4b803`，它并不同于`master`的`4c805e2`，因为这两个commit只是改动相同，但确实是两个不同的commit。用`git cherry-pick`，我们就不需要在`dev`分支上手动再把修bug的过程重复一遍。
@@ -5067,3 +5132,403 @@ Git自动给`dev`分支做了一次提交，注意这次提交的commit是`1d4b8
 当手头工作没有完成时，先把工作现场`git stash`一下，然后去修复bug，修复后，再`git stash pop`，回到工作现场；
 
 在`master`分支上修复的bug，想要合并到当前`dev`分支，可以用`git cherry-pick <commit>`命令，把bug提交的修改“复制”到当前分支，避免重复劳动。
+
+
+
+总结：什么时候在 dev 修，什么时候在 master 修？
+
+| 场景                           | 修复位置                                                 | 是否需要同步        |
+| ------------------------------ | -------------------------------------------------------- | ------------------- |
+| 仅 dev 有 bug（新功能引入）    | dev 修                                                   | 不需要同步到 master |
+| master 和 dev 都有 bug         | 推荐：在 master 修，再 cherry-pick 到 dev                |                     |
+| 只在 dev 修，但想同步到 master | 允许，但要 cherry-pick，只挑出修复，不带入其他未完成开发 |                     |
+
+
+
+
+
+### 5. Feature分支
+
+添加一个新功能时，你肯定不希望因为一些实验性质的代码，把主分支搞乱了，所以，每添加一个新功能，最好新建一个feature分支，在上面开发，完成后，合并，最后，删除该feature分支。
+
+
+
+
+
+
+
+```c
+ git switch -c feature-vulcan
+ $ git add vulcan.py
+
+$ git status
+     $ git commit -m "add feature vulcan"
+     
+ $ git switch dev
+    /*
+    一切顺利的话，feature分支和bug分支是类似的，合并，然后删除。
+但是！
+就在此时，接到上级命令，因经费不足，新功能必须取消！
+虽然白干了，但是这个包含机密资料的分支还是必须就地销毁：
+    */
+ git branch -d feature-vulcan    
+     /*
+     销毁失败。Git友情提醒，feature-vulcan分支还没有被合并，如果删除，将丢失掉修改，如果要强行删除，需要使用大写的-D参数。。
+     */
+     git branch -D feature-vulcan
+```
+
+
+
+如果要丢弃一个没有被合并过的分支，可以通过`git branch -D <name>`强行删除。
+
+### 6. 多人协作
+
+
+
+
+
+推送分支
+
+推送分支，就是把该分支上的所有本地提交推送到远程库。推送时，要指定本地分支，这样，Git就会把该分支推送到远程库对应的远程分支上：
+
+```
+git  push origin(远程仓库默认名字) master(本地分支)
+```
+
+```
+git push origin dev
+```
+
+但是，并不是一定要把本地分支往远程推送，那么，哪些分支需要推送，哪些不需要呢？
+
+- `master`分支是主分支，因此要时刻与远程同步；
+- `dev`分支是开发分支，团队所有成员都需要在上面工作，所以也需要与远程同步；
+- bug分支只用于在本地修复bug，就没必要推到远程了，除非老板要看看你每周到底修复了几个bug；
+- feature分支是否推到远程，取决于你是否和你的小伙伴合作在上面开发。
+
+总之，就是在Git中，分支完全可以在本地自己藏着玩，是否推送，视你的心情而定！
+
+
+
+抓取分支
+
+多人协作时，大家都会往`master`和`dev`分支上推送各自的修改。
+
+现在，模拟一个你的小伙伴，可以在另一台电脑（注意要把SSH Key添加到GitHub）或者同一台电脑的另一个目录下克隆：
+
+```c
+//当你的小伙伴从远程库clone时，默认情况下，你的小伙伴只能看到本地的master分支
+git branch
+
+//你的小伙伴要在dev分支上开发，就必须创建远程origin的dev分支到本地，于是他用这个命令创建本地dev分支：
+$ git checkout -b dev origin/dev
+//他就可以在dev上继续修改，然后，时不时地把dev分支push到远程：
+git add env.txt
+git commit -m "add env"
+ git push origin dev
+
+//你的小伙伴已经向origin/dev分支推送了他的提交，而碰巧你也对同样的文件作了修改，并试图推送：
+
+$ git add env.txt
+$ git commit -m "add new env"
+$ git push origin dev
+
+//推送失败，因为你的小伙伴的最新提交和你试图推送的提交有冲突，解决办法也很简单，Git已经提示我们，先用git pull把最新的提交从origin/dev抓下来，然后，在本地合并，解决冲突，再推送：
+
+$ git pull
+ git branch --set-upstream-to=origin/dev dev//git pull也失败了，原因是没有指定本地dev分支与远程origin/dev分支的链接，根据提示，设置dev和origin/dev的链接：
+   $ git pull
+    
+   ///这回git pull成功，但是合并有冲突，需要手动解决，解决的方法和分支管理中的解决冲突完全一样。解决后，提交，再push： 
+    $ git commit -m "fix env conflict"
+    $ git push origin dev
+```
+
+因此，多人协作的工作模式通常是这样：
+
+1. 首先，可以尝试用`git push origin <branch-name>`推送自己的修改；
+2. 如果推送失败，则因为远程分支比你的本地更新，需要先用`git pull`试图合并；
+3. 如果合并有冲突，则解决冲突，并在本地提交；
+4. 没有冲突或者解决掉冲突后，再用`git push origin <branch-name>`推送就能成功！
+
+如果`git pull`提示`no tracking information`，则说明本地分支和远程分支的链接关系没有创建，用命令`git branch --set-upstream-to <branch-name> origin/<branch-name>`。
+
+这就是多人协作的工作模式，一旦熟悉了，就非常简单。
+
+小结
+
+- 查看远程库信息，使用`git remote -v`；
+- 本地新建的分支如果不推送到远程，对其他人就是不可见的；
+- 从本地推送分支，使用`git push origin branch-name`，如果推送失败，先用`git pull`抓取远程的新提交；
+- 在本地创建和远程分支对应的分支，使用`git checkout -b branch-name origin/branch-name`，本地和远程分支的名称最好一致；
+- 建立本地分支和远程分支的关联，使用`git branch --set-upstream branch-name origin/branch-name`；
+- 从远程抓取分支，使用`git pull`，如果有冲突，要先处理冲突。
+
+
+
+```c
+为什么后 push 的人需要先 pull？
+当多人协作时，假设你和同事都在 dev 分支上工作：
+
+初始状态：远程仓库和你们本地的 dev 分支都是版本 A
+
+同事先推送：
+
+同事修改代码并提交到本地（版本 B）
+
+同事执行 git push origin dev 成功，远程仓库更新为版本 B
+
+你也修改了代码：
+
+你基于版本 A 修改了代码并提交到本地（版本 C）
+
+当你尝试 git push origin dev 时，Git 会拒绝你的推送
+
+Git 为什么会拒绝你的推送？
+因为 Git 发现远程仓库的 dev 分支（版本 B）已经不是你上次拉取时的状态（版本 A）了。Git 要求你必须先合并远程的最新更改（版本 B）到你的本地分支（版本 C），然后才能推送。
+
+具体流程
+你尝试推送：
+
+bash
+git push origin dev
+会收到类似这样的错误：
+
+text
+! [rejected]        dev -> dev (non-fast-forward)
+Git 提示你需要先 pull：
+
+text
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. Integrate the remote changes (e.g.
+hint: 'git pull ...') before pushing again.
+你执行 pull 操作：
+
+bash
+git pull origin dev
+这相当于：
+
+git fetch origin dev（获取远程最新代码）
+
+git merge origin/dev（将远程变更合并到本地）
+
+这时有两种情况：
+
+没有冲突：Git 会自动创建一个合并提交（版本 D，包含 B 和 C 的修改）
+
+有冲突：需要手动解决冲突（如前一节所述）
+
+解决冲突后（如有），提交合并结果：
+
+bash
+git commit -m "Merge remote changes"
+最后推送：
+
+bash
+git push origin dev
+为什么这样设计？
+这种机制是 Git 的重要安全特性：
+
+防止意外覆盖他人的工作
+
+确保历史记录的完整性
+
+强制开发者意识到并处理代码变更之间的交互
+
+实际工作中的建议
+开始工作前先 pull：git pull origin dev 获取最新代码
+
+频繁提交和推送：减少大范围冲突的可能性
+
+小步提交：每次提交只做一个小功能的修改，冲突更容易解决
+
+这种工作流虽然有时显得繁琐，但能有效防止代码丢失和冲突，是多人协作的必要流程。
+```
+
+
+
+
+
+
+
+### 7.Rebase
+
+在上一节我们看到了，多人在同一个分支上协作时，很容易出现冲突。即使没有冲突，后push的童鞋不得不先pull，在本地合并，然后才能push成功。
+
+
+
+
+
+### 小结
+
+- rebase操作可以把本地未push的分叉提交历史整理成直线；
+- rebase的目的是使得我们在查看历史提交的变化时更容易，因为分叉的提交需要三方对比。
+
+## 2. 标签管理
+
+Git 标签（Tag）确实是为了更方便地管理 commit，特别是在版本发布和重要节点标记方面非常有用。下面我会详细解释标签的作用、使用场景以及具体操作。
+
+**Git 标签的作用**
+
+标签（Tag）本质上是一个**指向特定 commit(默认当前HEAD) 的不可变引用**（类似于分支，但不会移动）。它的主要用途包括：
+
+**1. 标记重要版本（如软件发布）**
+
+- 例如 `v1.0.0`、`v2.3.1` 等，方便快速找到某个发布版本对应的代码。
+- 比直接记忆 commit hash（如 `a1b2c3d`）更直观。
+
+**2. 方便回滚到指定版本**
+
+- 如果线上版本 `v1.2.0` 出现 Bug，可以直接检出（`git checkout v1.2.0`）进行修复，而不用记住 commit ID。  切换到标签版本
+
+
+
+
+
+### 1.创建标签
+
+```c
+git branch
+//切换到需要打标签的分支上
+git switch master
+git tag V1.0 //然后，敲命令git tag <name>就可以打一个新标签：
+
+git tag   //可以用命令git tag查看所有标签：  打标签是commit上
+    
+/*
+默认标签是打在最新提交的commit上的。有时候，如果忘了打标签，比如，现在已经是周五了，但应该在周一打的标签没有打，怎么办？
+方法是找到历史提交的commit id，然后打上就可以了：
+*/    
+     git log --pretty=oneline --abbrev-commit
+    //比方说要对add merge这次提交打标签，它对应的commit id是f52c633，敲入命令
+    $ git tag v0.9 f52c633
+//再用命令git tag查看标签：
+  git  tag
+    //注意，标签不是按时间顺序列出，而是按字母排序的。可以用git show <tagname>查看标签信息：
+    git show v0.9
+```
+
+```
+//可以看到，v0.9确实打在add merge这次提交上。
+$ git show v0.9
+commit f52c63349bc3c1593499807e5c8e972b82c8f286 (tag: v0.9)
+Author: Michael Liao <askxuefeng@gmail.com>
+Date:   Fri May 18 21:56:54 2018 +0800
+
+    add merge
+
+diff --git a/readme.txt b/readme.txt
+...
+
+```
+
+```c
+//还可以创建带有说明的标签，用-a指定标签名，-m指定说明文字：
+git tag -a v1.0 -m "说明" commit_id
+$ git tag -a v0.1 -m "version 0.1 released" 1094adb
+
+```
+
+标签总是和某个commit挂钩。如果这个commit既出现在master分支，又出现在dev分支，那么在这两个分支上都可以看到这个标签。
+
+#### 小结
+
+- 命令`git tag <tagname>`用于新建一个标签，默认为`HEAD`，也可以指定一个commit id；
+
+- 命令`git tag -a <tagname> -m "blablabla..."`可以指定标签信息；
+
+- 命令`git tag`可以查看所有标签。
+
+  
+
+### 2. 操作标签
+
+```c
+git tag -d v1.0 //如果标签打错了，也可以删除
+    
+    //如果要推送某个标签到远程，使用命令git push origin <tagname>：
+    git push origin v1.0
+    // 一次性推送全部尚未推送到远程的本地标签：
+    git push origin --tags
+    
+    //如果标签已经推送到远程，要删除远程标签就麻烦一点，先从本地删除：
+    git tag -d v0.9
+    git push origin :refs/tags/v0.9 //然后，从远程删除。删除命令也是push，但是格式如下：
+    
+```
+
+#### 小结
+
+- 命令`git push origin <tagname>`可以推送一个本地标签；
+- 命令`git push origin --tags`可以推送全部未推送过的本地标签；
+- 命令`git tag -d <tagname>`可以删除一个本地标签；
+- 命令`git push origin :refs/tags/<tagname>`可以删除一个远程标签。
+
+
+
+
+
+#### 完整示例流程**
+
+**场景：修复旧版本 `v1.0.0` 的 Bug**
+
+1. **查看标签**：
+
+   bash
+
+   ```
+   git tag
+   ```
+
+   输出：
+
+   text
+
+   ```
+   v1.0.0
+   v1.1.0
+   v2.0.0
+   ```
+
+2. **基于 `v1.0.0` 创建修复分支**：
+
+   bash
+
+   ```
+   git checkout -b fix-bug-v1.0.0 v1.0.0
+   ```
+
+3. **修改代码并提交**：
+
+   bash
+
+   ```
+   vim app.js  # 修复 Bug
+   git add app.js
+   git commit -m "修复 v1.0.0 的登录问题"
+   ```
+
+4. **可选：合并回 `master`（如果需要）**：
+
+   bash
+
+   ```
+   git checkout master
+   git merge fix-bug-v1.0.0
+   ```
+
+**总结**
+
+| 操作                       | 命令                              | 说明                              |
+| :------------------------- | :-------------------------------- | :-------------------------------- |
+| **查看标签**               | `git tag`                         | 列出所有标签                      |
+| **基于标签创建分支**       | `git checkout -b 新分支名 标签名` | 从标签创建可修改的分支            |
+| **直接切换到标签（只读）** | `git checkout 标签名`             | 进入 `detached HEAD` 状态（慎用） |
+
+**关键点**：
+✅ **标签是只读的**，要修改代码必须**先创建分支**。
+✅ **新分支和 `master` 无关**，除非你主动合并。
+✅ **适用于修复旧版本 Bug**，而不会影响最新代码。
+
+现在你应该清楚整个流程了！如果还有疑问，欢迎继续提问 😊
