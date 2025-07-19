@@ -1399,6 +1399,49 @@ B继承a的时候，B自己没有虚函数此时会在磁盘的只读代码段�
 
 
 
+### 纯虚函数
+
+纯虚函数
+
+- **定义**：纯虚函数是在基类中声明的虚函数，但没有实现。含有纯虚函数的类称为抽象类，不能实例化。
+- **用途**：强制子类实现该函数。
+
+```cpp
+class Shape {
+public:
+    virtual void draw() = 0;  // 纯虚函数
+};
+
+class Circle : public Shape {
+public:
+    void draw() override { cout << "Drawing Circle" << endl; }
+};
+```
+
+. 含有纯虚函数的类是否可以实例化？
+
+**不可以**。含有纯虚函数的类被称为**抽象类**，抽象类不能直接实例化。纯虚函数的存在意味着该类是一个接口或基类，具体的实现需要由派生类来完成。
+
+```cpp
+class AbstractClass {
+public:
+    virtual void pureVirtualFunction() = 0;  // 纯虚函数
+};
+
+int main() {
+    // AbstractClass obj;  // 错误：不能实例化抽象类
+    return 0;
+}
+```
+
+**原因**：纯虚函数没有实现，抽象类只是一个接口定义，无法创建具体的对象。只有派生类实现了所有纯虚函数后，才能实例化派生类。
+
+
+
+
+
+
+
 ### 11. 虚析构函数的作用
 
 ✅ 结论（通俗一点讲）：
@@ -1509,6 +1552,28 @@ cppCopyEditfor (Base* p : objs)
 
 
 
+### 构造函数是否可以是虚函数，析构函数为什么建议是虚函数？
+
+#### 构造函数是否可以是虚函数？
+
+**不可以**。构造函数不能是虚函数，原因如下：
+
+- 构造函数的作用是初始化对象，而虚函数需要通过虚函数表（vtable）来调用。在构造函数执行时，对象尚未完全构造，虚函数表还未初始化，因此无法调用虚函数。
+- 虚函数的调用依赖于对象的类型信息，而构造函数
+
+正在创建对象，类型信息尚未确定。
+
+#### 构函数为什么建议是虚函数？
+
+**析构函数建议是虚函数**，尤其是在基类中。原因如下：
+
+- 当使用基类指针指向派生类对象时，如果基类的析构函数不是虚函数，那么在删除该指针时，只会调用基类的析构函数，而不会调用派生类的析构函数，导致派生类对象的部分资源未被释放，从而引发内存泄漏。
+- 如果基类的析构函数是虚函数，删除基类指针时会正确调用派生类的析构函数，确保资源完全释放。
+
+### 友元函数
+
+**友元函数**可以访问类的私有成员和保护成员，但它不是类的成员函数。
+
 
 
 ### 12. 动态库和静态库的区别
@@ -1552,451 +1617,6 @@ cppCopyEditfor (Base* p : objs)
 #### Cmake中的动态库和静态库
 
 
-
-
-
-
-
-
-
-
-
-### 13.  Cmake  语法  
-
-
-
-在build  目录  cmake   然后make 
-
-  #### 01.  set()   file()/aux_source_directory  add_excutable()
-
-基础
-
-构建一个 build目录  进入到buile目录，执行cmake .. *(这个..路径是CMakeLists.txt文件所在的目录)*
-
-![image-20250715145635290](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715145635290.png)
-
-```cmake
-CMakeLists.txt
-#项目名
-project(test)
-#指定Cmake的最低版本
-cmake_minimum_required(VERSION 3.0)
-
-set(CMAKE_CXX_STANDARD 11)
-
-#设置变量
-set(SOR a.cpp  b.cpp  c.cpp)
-#文件太多 不能一个一个都写出来  通过两种文件搜索的方式
-aux_source_directory(${PROJECT_SOURCE_DIR} SOR) #PROJECT_SOURCE_DIR是cmake .. 的地址，搜索所有的.cpp .c .h 不能递归
-
-file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp) # 在目录下递归搜索，  CMAKE_CURRENT_SOURCE_DIR（搜索指定的.cpp 递归）是CMakeList.txt 文件所在目录
-
-#设置输出路径 宏定义
-set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}) 
-add_executable(test &{SRC})
-
-
-```
-
-✅ 总结一句话：
-
-> CMake 不需要 `.h` 文件去参与编译，只要 `.cpp` 文件引用到了正确的 `.h`，编译器就能自动找到并使用。你没写 `.h` 也能编译成功，是完全合理的。
-
-
-
-
-
-#### 02  include   src    build  
-
-源文件和头文件分开了   要告诉编译器头文件所在的位置  要不找不到  
-
-add_drictories(&{CMAKE_CURRENT_SOURCE_DIR}/include)
-
-![image-20250715150543720](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715150543720.png)
-
-```cmake
- project(test)
-cmake_minimum_requiredVERSION 3.0()
-set(CMAKE_CXX_STANDARD  11)
-
-file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/sec/*.cpp)
-# 设置头文件搜索路径.h
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)  #等同于给编译器加了参数：-I/path/to/your/project/include
-#添加库  static  share
-#add_library(calc SHARED ${SRC})
-
-set(EXECUTABLE  ${CMAKE_CURRENT_SOURCE_DIR} )
-add_executable(text &{SRC})
-
-```
-
-
-
-```cmake
-
-# cmake 时构建一个build目录（保存cmake生成的中间产物） cmake ..(这个..路径是CMakeLists.txt文件所在的目录)
-#项目名 不写可不可以
-project(test)
-#指定cmake版本  高于3.0
-cmake_minimum_required(VERSION 3.0)
-
-#设置变量
-#set(SOR add.cpp div.cpp mult.cpp sub.cpp main.cpp)
-#文件搜索的两种方式
-#aux_source_directory(${PROJECT_SOURCE_DIR} SOR)  #   PROJECT_SOURCE_DIR（搜索所有的.cpp .c .h文件 不能递归）是cmake 后的地址
-
-#[[注意  1.file只是说把路径列表给SOR   但是并没有给编译器，.h需要给编译器编译器才知道去哪里寻找
-file(GLOB SOR ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
-file(GLOB SOR_H ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h) 
-set(SOR ${SOR} ${SOR_H})  # 合并列表
-虽然你把头文件路径放入了 SOR 变量
-但 CMake 不会自动 把这些路径加入编译器的头文件搜索路径
-编译器仍然不知道去哪里找 head.h
-
-]]
-file(GLOB SOR ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)  #   CMAKE_CURRENT_SOURCE_DIR（搜索指定的.cpp 递归）是CMakeList.txt 文件所在目录
-# 设置头文件搜索路径
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include) 
-
-
-#设置输出路径 宏定义
-set(EXECUTABLE_OUTPUT_PATH  ${PROJECT_SOURCE_DIR})  #PROJECT_SOURCE_DIR宏是cmake 后面跟的路径 
-#生成可执行文件
-add_executable(test ${SOR})
-
-```
-
-
-
-#### 03 静态库  动态库  
-
-
-
-总体流程  一样的
-
-add_library()  //生成库
-
-link_directories()  //告诉库的位置
-
-add_executable() //生成可执行文件
-
-target_link_libraries(test  cale) //  告诉某个可执行文件链接哪个库
-
-
-
-```cmake
-project(test)
-    
-cmake_minimum_required(VERSION 3.0)
-set(CMAKE_CXX_STANDARD 11)
-    
-    
-file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-#库的输出路径
-#  静态库和动态库都可以使用 LIBRARY_OUTPUT_PATH 针对动态库具有可执行权限还可以使用EXECUTABLE_OUTPUT_PATH
-set(LIBRARY_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
-
-#添加静态库 
-add_library(cale_a STATIC ${SRC})
-
-#添加动态库
-add_library(cale_s SHARED ${SRC})
-
-
-link_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib1)# 告诉静态库的文件位置
-add_executable(test1 ${SRC})  
-target_link_libraries(test1 cale_a)  #必须在add_execurable后面是给某个“已经存在的目标”（target）设置链接库属性。
-
-# 有了库要发布给使用者  动态库和静态库都是二进制文件 .cpp是文本的格式  所以发布的时候还要有include中的.h文件
-
-#测试创建出来的静态库和动态库能不能用  需要先发布 库和头文件
-# #动态库的链接
-link_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib2)
-add_executable(test2 ${SRC})
-target_link_libraries(test2  cale) #这里给出动态库的链接  TARGET
-    
-```
-
-是的，✅ **`target_link_libraries(test1 cale_a)` 必须在 `add_executable(test1 ...)` 之后执行**，这是 **CMake 的语法规定**，不是建议，而是硬性规则。
-
-📌 原因解释（一定要在后面）
-
-CMake 的设计逻辑是：
-
-> `target_link_libraries()` 是给某个“已经存在的目标”（target）设置链接库属性。
-
-所以你必须 **先创建这个目标**（不管是可执行文件 `add_executable()`，还是库 `add_library()`），CMake 才允许你对它设置链接信息。
-
-#### 05  message
-
-打印消息的
-
-```cmake
-#打印消息
-cmake_minimum_required(VERSION 3.0)
-project(message)
-set(CMAKE_CXX_STANDARD 11)
-
-
-file(GLOB  SRC ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-message( "xxxxxxxxxxxxxx")
-link_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib2)
-message(STATUS "11111xxxxxxxxxxxxxx")
-add_executable(test ${SRC})
-#输出变量
-message(${SRC})
-message(STATUS "11111xxxxxxxxxxxxxx")
-```
-
-
-
-#### 06 list 
-
-```
-#[[字符串的操作    
-list（APPEND src  item1  item2  ... )   
-list(REMOVE_ITEM src  item1  item2  ...)   
-获取长度list(LENGTH src  output_var)  
-获取元素list(GET SRC -1 output_var)
-                list(JOIN src  sep  output_var)
-                list(find  src  item  output_var)
-                list(insert src index item1 item2 ...)
-插入头           list(prepend src item1 item2 ...)
-弹出最后一个元素  list(POP_BACK src output_var)
-弹出头           list(POP_FRONT src output_var)
-移除列表中重复元素 list(REMOVE_DUPLICATES src)
-将指定索引删除    list(REMOVE_AT src index)
-列表反转         list(REVERSE src)
-列表排序         list(SORT src comparator)
-]]
-#list的其他操作   
-```
-
-
-
-```cmake
-cmake_minimum_required(VERSION 3.0)
-project(test)
-set(CMAKE_CXX_STANDARD 11)
-
-message("===========配置开始============")
-file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
-file(GLOB APP ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-#删除绝对路径
-list(REMOVE_ITEM SRC ${APP}) 
-message("SRC:${SRC}")
-message("APP:${APP}")
-message("===========配置完成============")
-
-#创建动态库
-message("===========创建动态库============")
-set(LIBRARY_OUTPUT_PATH  ${CMAKE_CURRENT_SOURCE_DIR}/lib_so)
-add_library(calc SHARED ${SRC})
-message("===========创建动态库完成============")
-
-link_directories(${LIBRARY_OUTPUT_PATH})
-set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
-add_executable(test ${APP})
-target_link_libraries(test calc)
-
-```
-
-#### 07 宏定义  
-
-*#进行宏定义  自定义 帮我们把程序执行期间需要的宏定义出来  add_definitions(-D宏)*
-
-很好！我们来详细讲清楚 CMake 中的：
-
-> ✅ `add_definitions(-DDEBUG)` 的含义、作用、使用时机，以及现代替代方式。
-
-✅ 一句话说明：
-
-```
-cmake
-
-
-CopyEdit
-add_definitions(-DDEBUG)
-```
-
-表示：
-
-> **给所有后续的源文件添加一个预处理宏定义 `DEBUG`，等效于在编译时加上 `-DDEBUG`。**
-
-✅ 它等价于手动 g++ 命令的写法：
-
-```
-bash
-
-
-CopyEdit
-g++ -DDEBUG main.cpp -o main
-```
-
-这样在 C++ 源文件里你就可以用：
-
-```
-cppCopyEdit#ifdef DEBUG
-    std::cout << "Debugging info..." << std::endl;
-#endif
-```
-
-```Cmake
-add_difinition(-DDEBUG)
-
-cmake_minimum_required(VERSION 3.0)
-project(test)
-set(CMAKE_CXX_STANDARD 11)
-
-message("===========配置开始============")
-file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
-file(GLOB APP ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-#删除绝对路径
-list(REMOVE_ITEM SRC ${APP}) 
-message("SRC:${SRC}")
-message("APP:${APP}")
-message("===========配置完成============")
-
-#创建动态库
-message("===========创建动态库============")
-set(LIBRARY_OUTPUT_PATH  ${CMAKE_CURRENT_SOURCE_DIR}/lib_so)
-add_library(calc SHARED ${SRC})
-message("===========创建动态库完成============")
-
-link_directories(${LIBRARY_OUTPUT_PATH})
-set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
-add_executable(test ${APP})
-target_link_libraries(test calc)
-
-```
-
-#### 08 父子关系的复杂目录
-
-*[add_subdirectory(lib)  父子关系的复杂目录  子目录也包含cmakelists.txt* 
-
-*子目录可以使用父目录的变量（全局变量）   父目录不可以使用子目录（局部）* 
-
-*]]*
-
-```cmake
-add_definitions(-DDEBUG)
-cmake_minimum_required(VERSION 3.0)
-project(test)
-set(CMAKE_CXX_STANDARD 11)
-
-message("===========配置开始============")
-file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
-file(GLOB APP ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-#删除绝对路径
-list(REMOVE_ITEM SRC ${APP}) 
-message("SRC:${SRC}")
-message("APP:${APP}")
-message("===========配置完成============")
-
-#创建动态库
-message("===========创建动态库============")
-set(LIBRARY_OUTPUT_PATH  ${CMAKE_CURRENT_SOURCE_DIR}/lib_so)
-add_library(calc SHARED ${SRC})
-message("===========创建动态库完成============")
-
-link_directories(${LIBRARY_OUTPUT_PATH})
-set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
-add_executable(test ${APP})
-target_link_libraries(test calc)
-
-```
-
-
-
-
-
-很好，这次我们讲 CMake 中的一个重要命令：
-
-> ✅ `add_subdirectory` —— 用于**将子目录加入当前构建系统**，支持递归构建多个模块或组件。
-
-
-
-
-
-✅ 一句话理解
-
-```
-cmake
-
-
-CopyEdit
-add_subdirectory(src)
-```
-
-表示：
-
-> “请进入 `src/` 目录，加载它的 `CMakeLists.txt` 并把它当作当前项目的一部分来一起构建。”
-
-📘 它的作用：
-
-| 功能                         | 说明                                           |
-| ---------------------------- | ---------------------------------------------- |
-| 🔨 **模块化管理源码**         | 每个模块或组件独立放在子目录中，便于维护和分工 |
-| 🔁 **递归构建**               | 会递归调用子目录下的 `CMakeLists.txt` 文件     |
-| 🔗 **支持 target 共享与依赖** | 主目录可以链接子目录中生成的库或目标           |
-
-✅ 示例场景
-
-你的工程结构如下：
-
-```
-csharpCopyEditproject/
-├── CMakeLists.txt          # 顶层
-├── main.cpp
-├── math/
-│   ├── CMakeLists.txt      # 子目录
-│   ├── add.cpp
-│   └── add.h
-```
-
-顶层 `CMakeLists.txt`
-
-```
-cmakeCopyEditcmake_minimum_required(VERSION 3.10)
-project(MyProject)
-
-add_subdirectory(math)  # 加入 math 子目录
-
-add_executable(main main.cpp)
-target_link_libraries(main mathlib)  # 链接子目录里的库
-```
-
-子目录 `math/CMakeLists.txt`
-
-```
-cmakeCopyEditadd_library(mathlib add.cpp)
-target_include_directories(mathlib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-```
-
-main.cpp`
-
-```
-cppCopyEdit#include "add.h"
-#include <iostream>
-
-int main() {
-    std::cout << add(2, 3) << std::endl;
-    return 0;
-}
-```
-
-✅ 执行结果：
-
-- CMake 会递归进入 `math/` 目录
-- 编译 `mathlib` 静态库
-- 主程序 `main` 链接这个库
-- 一起构建完成，目标可用
-- 
 
 
 
@@ -4073,7 +3693,261 @@ int y = x.load(std::memory_order_acquire);
 
 
 
+### 17  `static` 关键字的作用及与 C 的区别
 
+`static` 关键字在 C++ 中主要影响变量或函数的 **生命周期**、**作用域** 和 **存储位置**。其具体影响如下：
+
+![虚拟内存空间划分](https://cdn.xiaolincoding.com/gh/xiaolincoder/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/%E8%99%9A%E6%8B%9F%E5%86%85%E5%AD%98/32%E4%BD%8D%E8%99%9A%E6%8B%9F%E5%86%85%E5%AD%98%E5%B8%83%E5%B1%80.png)
+
+✅ 总结对比表
+
+| 用法场景            | C 中支持 | C++ 中支持 | 作用说明                       |
+| ------------------- | -------- | ---------- | ------------------------------ |
+| 局部变量前加 static | ✅        | ✅          | 静态局部变量，保留值           |
+| 全局变量前加 static | ✅        | ✅          | 限定链接性，只在当前文件有效   |
+| 函数前加 static     | ✅        | ✅          | 仅当前文件可见                 |
+| 类内静态变量        | ❌        | ✅          | 类共享变量，需要类外初始化     |
+| 类内静态函数        | ❌        | ✅          | 不依赖对象，不能访问非静态成员 |
+
+### 18 指针和引用的区别
+
+指针：指向一个对象  可以间接操作对象，
+
+引用：对象的一个别名，可以直接操作
+
+主要区别
+
+1. **初始化**：引用必须初始化，而指针不必。
+2. **修改**：引用初始化后不可修改所引用的对象，而指针可以修改所指向的对象。（引用一旦初始化便不可以修改，指针可以修改）
+3. **递增操作**：指针递增操作是改变地址，引用递增操作是改变值。
+4. **`sizeof`**：指针的 `sizeof` 是指针的大小，引用的 `sizeof` 是数据的大小。
+
+### 19 const关键字
+
+`const`关键字用于声明常量，变量一旦被`const`修饰并初始化后，其值就无法再被修改。下面详细介绍`const`在指针中的应用：
+
+#### 1. 常量指针与指针常量
+
+在指针的使用中，`*`（指针）和`const`（常量）的位置决定了指针和指针所指向的值是否可以被修改，遵循“谁在前先读谁”的原则，`*`象征着地址，`const`象征着内容，谁在前面谁就不允许改变。
+
+- **指针常量**：
+
+  ```c
+  int * const p; 
+  // 这里的 const 修饰指针 p，意味着 p 是一个指向整型数的常指针，
+  // 指针指向不可以修改，但指针指向的整型数可以修改
+  int a = 10, b = 20;
+  p = &a; // 初始化指针指向
+  // p = &b;  // 错误，指针指向被限定
+  *p = 20; // 指针指向的值可以修改
+  ```
+
+- **常量指针**：
+
+  ```c
+  const int *p; 
+  // const 修饰 *p，表明 p 是一个指向常整型数的指针，
+  // 指针指向可以修改，但指针指向的整型数不可修改
+  int a = 10, b = 20;
+  p = &a;
+  // *p = 20;  // 错误，指针指向的值被限定
+  p = &b; // 指针指向可以修改
+  ```
+
+- **指向常整形数的常指针**：
+
+```c
+const int * const a; 
+// 这种情况下，指针指向和指针指向的值都不可修改
+```
+
+### 20 volatile关键字
+
+#### 1. 作用
+
+`volatile`关键字的作用是告诉编译器，每次对该变量的访问都要从内存或对应外设寄存器中取值放入CPU通用寄存器后再进行操作，防止编译器对代码进行优化。
+
+#### 2. 详解
+
+CPU在读取数据时，会从指定地址处取值并搬运到CPU通用寄存器中进行处理。在不加`volatile`关键字时，对于频繁的操作，编译器可能会对代码的汇编指令进行优化，从而导致一些预期之外的结果。例如：
+
+#### 3. 使用场合
+
+`volatile`关键字通常用于以下场合：
+
+- **寄存器**：在访问硬件寄存器时，由于寄存器的值可能会被硬件随时修改，因此需要使用`volatile`关键字确保每次访问都能获取到最新的值。
+- **临界区访问的变量**：在多线程或多任务环境中，临界区的变量可能会被其他线程或任务修改，使用`volatile`可以保证数据的一致性。
+- **中断函数访问的全局或static变量**：中断函数可能会在任何时候打断主程序的执行，对全局或静态变量进行修改，使用`volatile`可以确保主程序能够及时感知到这些变化。
+
+#### 4. 与Cache的区别
+
+- `volatile`是对编译器的约束，它可以控制每次从RAM读取数据到通用寄存器，但无法控制从RAM到通用寄存器的过程（从RAM到寄存器要经过cache）。若两次被`volatile`修饰的读取指令过快，即使RAM中的值改变了，但由于读取过快没有更新cache，那么实际上搬运到通用寄存器的值来自于cache，此类情况下需要禁用cache。
+- 编译器优化是针对于LDR命令的，从内存中读取数据到寄存器时不允许优化这一过程，而None-cache保护的是对内存数据的访问（`volatile`无法控制LDR命令执行后是否刷新cache）。 
+
+![img](https://cdn.xiaolincoding.com/gh/xiaolincoder/ImageHost2/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/%E5%AD%98%E5%82%A8%E7%BB%93%E6%9E%84/%E5%AD%98%E5%82%A8%E5%99%A8%E7%9A%84%E5%B1%82%E6%AC%A1%E5%85%B3%E7%B3%BB%E5%9B%BE.png)
+
+
+
+### 21 define 与const区别
+
+名称 编译阶段 安全性 内存占用 调试
+
+|         |                          |                                                |                                 |                                            |
+| ------- | ------------------------ | ---------------------------------------------- | ------------------------------- | ------------------------------------------ |
+| #define | 编译的预处理阶段展开替换 | 低，只是简单的文本替换，没有类型检查           | 占用代码段空间（`.text`）       | 无法调试，因为在预处理阶段就已经被替换掉了 |
+| const   | 编译、运行阶段           | 有数据类型检查，能在编译时发现类型不匹配的错误 | 占用数据段空间（`.data`常量区） | 可调式，可以在调试器中查看常量的值         |
+
+### 22 strcmp 函数
+
+用于比较两个字符串大小
+
+`strcmp` 函数用于比较两个字符串的大小，其返回值反映了两个字符串的大小关系：
+
+- 若字符串 1 等于字符串 2，返回值等于 0；
+- 若字符串 1 大于字符串 2，返回值大于 0；
+- 若字符串 1 小于字符串 2，返回值小于 0。
+
+该函数的比较规则是按照字符的 ASCII 码值逐个比较两个字符串中的字符，直到遇到不同的字符或者字符串结束符 `'\0'`。示例代码如下
+
+### 23 register 关键字
+
+在早期的 C++ 标准里，`register` 是一个特殊的关键字，其主要用途是向编译器提出建议，希望编译器将所声明的变量存储在寄存器中。寄存器是位于 CPU 内部的高速存储单元，相较于普通的内存，对寄存器中数据的访问速度要快得多，因为访问寄存器无需像访问内存那样经过一系列复杂的寻址操作，从而能够显著提高程序对变量的访问速度，进而提升程序的整体性能。
+
+以下是一个简单示例：
+
+```c
+#include <iostream>
+int main() {
+    register int num = 10;
+    std::cout << num << std::endl;
+    return 0;
+}
+```
+
+自 C++11 标准开始，`register` 关键字已被弃用。这是因为现代的编译器已经具备了非常强大的智能化优化能力，它们能够基于自身先进的优化算法以及对代码的深入分析，自动且精准地决定何时将变量存储在寄存器中，而无需开发人员再使用 `register` 关键字进行手动提示。所以，即便在代码中使用了 `register` 关键字，编译器也会直接忽略它，而是依据自身的优化策略来选择最佳的存储方式。
+
+
+
+### 24 sizeof()
+
+`sizeof` 运算符是 C 和 C++ 中一个非常实用的操作符，它主要用于计算数据类型或表达式所占用的字节数。其工作机制是在编译阶段，编译器会查找符号表，判断数据的类型，然后根据基础类型来确定并返回对应的字节数。
+
+示例如下：
+
+```cpp
+#include <iostream>
+int main() {
+    int num;
+    std::cout << "int 类型占用字节数: " << sizeof(num) << std::endl;
+    return 0;
+}
+```
+
+然而，如果 `sizeof` 运算符的参数是一个不定长数组，情况就有所不同了。此时，编译器无法在编译时确定数组的长度，因此需要在运行时进行计算。
+
+### 25.exterc "c"的作用
+
+c++中使用c编写的模块  函数，不包含在编译时会报错（由于c++会为其函数生成唯一的符号，而C不会）就会出现链接错误
+
+
+
+在 C++ 编程中，`extern "C"` 是一个非常重要的特性，其主要作用是实现 C++ 代码对 C 编写的模块的正确调用。
+
+由于 C++ 支持函数重载和命名空间等特性，编译器在编译 C++ 代码时会对函数名进行修饰（Name Mangling），以保证函数名的唯一性。而 C 语言不支持这些特性，其函数名不会被修饰。因此，当 C++ 代码需要调用 C 编写的函数时，如果不使用 `extern "C"`，就会出现链接错误。
+
+示例如下：
+
+```c
+// C 代码，test.c
+#include <stdio.h>
+void hello() {
+    printf("Hello from C!\n");
+}
+
+// C++ 代码，test.cpp
+#include <iostream>
+extern "C" {
+    void hello();
+}
+int main() {
+    hello();
+    return 0;
+}
+```
+
+ ### 26  32位与64位系统的区别
+
+主要体现在寻址范围和寄存器数据宽度
+
+#### CPU 通用寄存器的数据宽度
+
+CPU 通用寄存器的数据宽度决定了 CPU 一次能够并行处理的二进制位数。32 位系统的 CPU 通用寄存器宽度为 32 位，即一次能够处理 32 位（4 字节）的数据；而 64 位系统的 CPU 通用寄存器宽度为 64 位，一次能够处理 64 位（8 字节）的数据。这使得 64 位系统在处理大规模数据和复杂计算时具有更高的效率。
+
+#### 寻址能力
+
+寻址能力是指系统能够访问的内存地址范围。32 位系统的寻址能力有限，仅支持最大 4GB 的内存寻址。这是因为 32 位系统使用 32 位二进制数来表示内存地址，其最大可表示的地址数为 ![img](https://www.nowcoder.com/equation?tex=2%5E%7B32%7D&preview=true)，即 4GB。而 64 位系统的寻址能力则要强大得多，理论上可以支持高达 ![img](https://www.nowcoder.com/equation?tex=2%5E%7B64%7D&preview=true) 字节的内存寻址，这在处理大规模数据和运行复杂应用程序时具有明显的优势。
+
+下是不同数据类型在 32 位机和 64 位机上所占字节数的对比：
+
+数据类型 32 位机（字节） 64 位机（字节）
+
+| `char`        | 1     | 1     |
+| ------------- | ----- | ----- |
+| `short`       | 2     | 2     |
+| `int`         | 4     | 4     |
+| `long`        | 4     | 8     |
+| `float`       | 4     | 4     |
+| `char *`      | 4     | 8     |
+| `long long`   | 8     | 8     |
+| `double`      | 8     | 8     |
+| `long double` | 10/12 | 10/16 |
+
+### 27 大小端模式（no）
+
+在计算机系统中，数据的存储方式存在大端模式和小端模式两种。
+
+
+
+#### 大小端模式的定义
+
+- **大端模式**：在大端模式下，数据的高位字节存储在低地址，低位字节存储在高地址。也就是说，数据的存储顺序与人们通常的书写顺序一致。
+- **小端模式**：小端模式则相反，数据的低位字节存储在低地址，高位字节存储在高地址。
+
+例如，对于十六进制数 `0x12345678`，在大端模式和小端模式下的内存排布如下：
+
+大端 小端
+
+|                       |                                |                                |
+| --------------------- | ------------------------------ | ------------------------------ |
+| 存储方式              | 高位存在低地址                 | 高位存在高地址                 |
+| 内存排布 `0x12345678` | 低地址 - 高地址：`12 34 56 78` | 低地址 - 高地址：`78 56 34 12` |
+
+
+
+### 28 段错误
+
+在 Linux 下的 C/C++ 编程中，段错误（Segmentation Fault）是一种常见且较为严重的错误，它通常是由于访问内存管理单元（MMU）异常所导致的。当程序试图访问一个不属于当前进程地址空间中的地址时，操作系统会进行干涉，引发 `SIGSEGV` 信号，从而产生段错误。
+
+#### 常见的段错误原因
+
+- **空指针**：程序尝试操作地址为 0 的内存区域。例如，对一个未初始化的指针进行解引用操作，就会导致空指针异常。
+- **野指针**：野指针是指指向一个已被释放或未分配内存的指针。访问野指针所指向的内存是不合法的，可能会导致数据被破坏或程序崩溃。
+- **堆栈越界**：当程序访问数组或其他数据结构时，如果超出了其合法的边界范围，就会导致堆栈越界错误。这可能会破坏相邻的内存数据，从而引发段错误。
+- **修改只读数据**：如果程序试图修改只读数据（如字符串常量），也会引发段错误。
+
+### 29、局部变量未定义时初始化结果不确定的原因
+
+（栈中数据不会清理）
+
+在 C 和 C++ 中，当定义局部变量时，实际上是在栈中通过移动栈指针，为程序提供一个内存空间，并将这个空间与局部变量名进行绑定。
+
+由于栈内存是被反复使用的，每次使用完后并不会进行清零操作，所以这块内存空间可能还保留着上次使用时的数据，也就是所谓的“脏数据”。
+
+因此，如果在定义局部变量时不进行初始化，那么该变量所占用的内存空间中的值就是一个随机的垃圾值，每次运行程序时这个值可能都不一样，这就导致了局部变量未定义时初始化结果的不确定性。
+
+### 30 、 printf 函数的返回值
+
+`printf` 函数是 C 语言中常用的输出函数，它的返回值是实际输出的字符数量。这个返回值可以用来检查输出是否成功或者统计输出的字符数。
 
 
 
@@ -4147,13 +4021,1181 @@ int y = x.load(std::memory_order_acquire);
 
 # 2.C基础
 
+https://blog.csdn.net/weixin_50591371/article/details/141286333
+
+## 1.const关键字的作用
+
+1）const修饰的变量不可以被修改
 
 
 
 
-# 3. linux基础命令
 
 
+
+ ### const 和define的区别
+
+​	#define 是宏定义，在编译阶段进行替换，不进行语法检查
+
+​	const 会进行语法检查，
+
+|         |                          |                                                |                                 |                                            |
+| ------- | ------------------------ | ---------------------------------------------- | ------------------------------- | ------------------------------------------ |
+| #define | 编译的预处理阶段展开替换 | 低，只是简单的文本替换，没有类型检查           | 占用代码段空间（`.text`）       | 无法调试，因为在预处理阶段就已经被替换掉了 |
+| const   | 编译、运行阶段           | 有数据类型检查，能在编译时发现类型不匹配的错误 | 占用数据段空间（`.data`常量区） | 可调式，可以在调试器中查看常量的值         |
+
+## 2.const关键字的用法
+
+常量指针 const int *a  ->指向的内容不可以改变
+
+指针常量 int const* a   ->指针的指向不可以改变
+
+ 指向常量的常指针 const int * const a   ->地址和指向的值都不可以改变
+
+## 3.static关键字的作用
+
+*********改变存储区  和   生命周期************
+
+
+
+静态存储区分为data段  和 bss段
+
+静态区并非一个正式的段名，它通常泛指以下两段：
+
+| 段名       | 存放内容                                         | 举例            | 所属区域 |
+| ---------- | ------------------------------------------------ | --------------- | -------- |
+| `.data` 段 | **已初始化**的全局变量和静态变量                 | `int a = 10;`   | 静态区   |
+| `.bss` 段  | **未初始化**（或初始化为 0）的全局变量和静态变量 | `static int b;` | 静态区   |
+
+
+
+也就是说，无论变量是 `static` 还是非 `static`，只要是**全局作用域的或具有静态生命周期**的（包括 `static` 局部变量），就会进入这两个段之一：
+
+- 初始化了 → `.data`
+- 没初始化或初始化为0 → `.bss`
+
+
+
+1）修饰局部变量 ：将栈区变为静态区存储，静态变量生命周期和程序相同，函数第一次调用时初始化，程序结束时销毁
+
+2）修饰全局变量：会将其外部连接属性（可能用extern修饰）变成内部属性，只能在当前源文件中使用，其他源文件无法使用。
+
+3）修饰函数：static修饰函数时，会将其外部链接属性改变为内部链接属性，此函数只能在当前源文件内使用，其他源文件中无法使用。（static修饰的函数是不是只能使用static修饰的变量）
+
+
+
+### extern和static的区别
+
+一图对比：`static` vs `extern`（作用于全局变量时）
+
+| 关键点           | `static`（修饰全局变量）             | `extern`（声明外部变量）                   |
+| ---------------- | ------------------------------------ | ------------------------------------------ |
+| **本质**         | 定义一个只在当前源文件可见的全局变量 | 引用另一个源文件中定义的变量               |
+| **作用域**       | 文件作用域（仅限当前 `.c` 文件）     | 没有限制（用于跨文件访问）                 |
+| **链接属性**     | 内部链接（internal linkage）         | 外部链接（external linkage）               |
+| **是否分配空间** | ✅ 分配（真正定义）                   | ❌ 不分配（只是声明）不是定义，不能初始化。 |
+| **用途**         | 限制变量/函数只在当前文件使用        | 让变量/函数可以跨文件共享                  |
+
+
+
+## 4.volatile作用
+
+
+
+防止编译器优化的，直接从变量内存中读取数据到CPU寄存器；
+
+
+
+内存中的值会变化，而程序一直使用寄存器的值从而导致异常。
+
+### 什么情况用到volatial
+
+1）并行设备的硬件寄存器（如状态寄存器） ？（不理解）
+
+ 在嵌入式系统中，**硬件寄存器**（如状态寄存器、数据寄存器等）是CPU与外部设备（如GPIO、UART、ADC等）交互的桥梁。这些寄存器的值可能随时**被硬件自动修改**（例如：串口接收到数据时状态寄存器会变化），而编译器无法通过静态分析预知这种变化。因此，必须用 `volatile` 修饰对这些寄存器的访问，否则编译器优化会导致程序行为异常。
+
+```cobol
+：如果编译器认为 UART_STATUS 的值不会被程序修改，可能会优化为只读取一次并缓存到寄存器中，后续直接使用缓存值，导致程序无法检测到硬件的真实状态。
+```
+
+如果不使用volatile修饰寄存器地址，那么编译器优化后的程序只对该寄存器进行了一次配置操作，对此地址只做了一次读操作，如下所示：
+
+2） 中断服务程序中修改的供其他程序检测的变量
+
+中断服务函数中对某变量进行修改时，若主程序中没有修改该变量，则编译器优化后可能只从内存中读取到寄存器中一次，之后每次只从寄存器中读取变量的副本，导致中断服务程序的操作短路，所以需要使用volatile对变量进行修饰，告诉编译器不对其优化。（意思是说  主程序第一次从内存取到寄存器，后续一直使用寄存器中的副本，会造成中断修改保存到内存不会真正被检测到）
+
+```c
+int flag = 0; // 无 volatile 修饰
+void main() {
+    while (1) {
+        if (flag == 1) { // 第一次从内存读取 flag 到寄存器
+            do_something();
+        }
+        // 后续循环中，编译器可能直接复用寄存器的副本（flag=0），不再读取内存！
+    }
+}
+void ISR() {
+    flag = 1; // 实际写入内存
+}
+```
+
+- 虽然中断修改了内存中的 `flag`，但主程序的 `if` 条件可能永远看不到这个变化，因为它一直使用寄存器中的旧副本（0）。
+
+3)多任务环境下任务间共享标志，应该加。
+
+多个任务都可以修改共享标志的值，编译器优化后会把变量读取到寄存器中，之后再取变量值时都是从寄存器读取，当内存变量或寄存器变量因别的线程而改变了值时，该寄存器的值不会改变，若不使用volatile修饰，会导致应用程序读取的值与实际的变量值不一致。
+
+### 关于volatile面试题
+
+#### 1）一个参数可以既是const又是volatile吗
+
+可以，比如只读状态寄存器，volatile因为他可能被意象不道的被改变,const是因为他不希望被改变
+
+#### 2)一个指针可以是volatile吗
+
+可以，中断程序中修改指向buffer的指针
+
+#### 3）下面代码有什么错误
+
+```c
+int square(volatile int* ptr)
+{
+    return *ptr * *ptr;    
+}
+
+```
+
+```c
+a=*ptr
+b=*ptr
+    //ptr指向可能会变  a可能！=b
+正确的代码如下所示：
+    
+ long square(volatile int* ptr)
+{
+    int a;
+ 
+    a = *ptr;
+    return a * a;
+}   
+```
+
+## 6.typedef和define的区别
+
+`typedef` 是 C 和 C++ 中的关键字，作用是给已有类型**定义一个新的名字**，可以让类型使用更简洁、更清晰，尤其在结构体、指针、函数指针等复杂类型中非常常见。
+
+typedef 原类型 新类型名;
+
+相当于给原类型名 起了个别名叫 新类型名
+
+```c
+typedef unsigend int uint;
+```
+
+1）原理不同
+
+#define时预处理指令，预处理值进行简单的字符替换，不进行语法检查；
+
+typedef是关键字，在编译阶段做语法正确性检查，给已有类型起个别名。
+
+2）功能不同
+
+typedef用来定义**类型**的别名，起到类型易于记忆的功能。
+
+#define不只可以为类型取别名，还可以定义常量、变量、编译开关等。
+
+3）作用域不同
+
+ \#define没有作用域的限制，只要是之前预定义过的宏，在以后的程序中都可以使用，而typedef有自己的作用域。（`typedef` 定义的**类型别名**，只在它所在的**作用域范围内有效**，和变量的作用域类似。）
+
+4）对指针的操作不同
+
+5)被const修饰是的含义不同
+
+```c
+#define INTPTR1 int*
+typedef int* INTPTR2;
+ 
+int main(void)
+{
+    int a = 1;    
+    int b = 2;
+    int c = 3;
+    const INTPTR1 p1 = &a;     /* 定义一个常量指针p1，不能通过p1改变其指向的内容，但p1可以指向其他位置 */  
+    const INTPTR2 P2 = &b;     /* 定义一个指针常量p2，即p2不能再指向其他位置 */
+    INTPTR2 const p3 = &c;     /* 定义一个指针常量p3 */
+ 
+    return 0；
+}
+ 
+```
+
+当 const修饰 typedef定义的int*时，const  修饰的是整个整体int*  是修饰指针说意识  指针常量
+
+```c
+//等价于：
+int* const p2 = &b;
+
+```
+
+对指针的操作不同
+
+```c
+#define INTPTR1 int*
+typedef int* INTPTR2;
+INTPTR1 p1, p2;  // 实际是：int* p1, p2;
+INTPTR2 p3, p4;  // 实际是：int* p3; int* p4;
+
+
+```
+
+🔹 `#define` 是**纯文本替换**
+
+编译前会被预处理成：
+
+```c
+int* p1, p2;
+
+```
+
+这实际上声明了：
+
+- `p1` 是一个 `int*`
+- `p2` 是一个 `int`
+
+因为只有 `p1` 带 `*`，`p2` 没有！
+
+> 🧨 **结果：p1 是指针，p2 是普通整型变量！**
+>
+> 
+
+🔹 `typedef` 是**真正的类型别名**
+
+```c
+int* p3;
+int* p4;
+```
+
+✅ **p3 和 p4 都是指针变量**，这是我们期望的结果。
+
+
+
+一、什么是 typedef 的作用域？
+
+`typedef` 并不会在全局“自动生效”，它的别名**只能在它被定义的作用域中使用**，包括以下几种情况：
+
+| 场景           | 作用域说明                                   |
+| -------------- | -------------------------------------------- |
+| 在全局定义     | 在整个 `.c` 文件（从定义开始）都可以使用     |
+| 在函数内定义   | 只能在该函数内部使用，函数外部无法访问该别名 |
+| 在头文件中定义 | 只对 `#include` 该头文件的源文件生效         |
+
+## 7.找出下面中断处理程序（ISR）的错误
+
+```c
+__interrupt double compute_area(double radius)
+{
+    double area PI * radius * radius;
+    printf("Area = %f\n", area);
+    return area;
+}
+```
+
+1) printf()是不可重入函数，不能在ISR中使用。printf()函数采用的缓冲机制，这个缓冲区是共享的，相当于一个 全局变量，第一层中断来时，它向缓冲里面写入一些部分内容，恰好这时来了个优先级更高的中断，它同样调用了printf()函数， 也向缓冲里面写入一些内容，这样缓冲区的内容就错乱了。
+
+2. 中断不能有返回值，不能传参
+
+3.  **ISR应该快进快出**，所以不推荐进行浮点运算，并且在许多编译器中浮点一般都是不可重入的，不允许在ISR中进行浮点运算。
+
+
+
+
+
+✅ 什么叫“不可重入”（non-reentrant）？
+
+👉 定义：
+
+> **一个函数如果在执行过程中被中断（例如发生中断 ISR），而该中断中又再次调用了这个函数，**那么该函数能否“安全”地工作，**不会破坏内部数据或导致逻辑错误**，这决定了它是否是“可重入”的。
+
+- ✅ **可重入函数**：被中断后重新进入仍能正常工作
+- ❌ **不可重入函数**：被中断再调用会出错，或破坏状态
+
+
+
+## 8.C语言编译的四个步骤
+
+1. 预处理： 展开宏和包含头文件，生成-i
+
+2) 编译:编译器对预处理后的源代码进行词法分析，语法分析，最后翻译成汇编文件 -s
+3) 汇编：-s转为机器码  生成-o
+4) 链接： 将多个目标文件和库文件组合在一起，并解决外部引用，最终生成可执行文件
+
+## 9. ***\*自己实现MyStrcpy函数和MyStrlen()函数\****（没看）
+
+
+
+## 10.无符号整型与有符号整型进行运算
+
+```c
+void foo(void)
+{
+    unsigned int a = 6;
+    int b = -20;
+    (a + b > 6) ? puts(">6") : puts("<6");
+}
+```
+
+答案输出为：“>6”，当表达式中存在有符号类型和无符号类型时，所有的操作数都自动转换为**无符号类型**。因此-20变成了一个非常大的正整数，所以该表达式计算出的结果大于6。嵌入式系统中频繁用到无符号整形的数据，务必注意。
+
+## 11.C语言内存分配方式有几种
+
+三种 ：静态存储区分配，堆上分配，栈上分配
+
+1. 静态存储区分配：编译阶段分配好，这块内存在程序运行的期间都存在，比如全局变量，静态变量。
+2. 栈上分配： 在执行函数时，函数内局部变量的存储单元都可以在栈上创建，栈空间充足的话则正常分配，栈空间不足则提示栈溢出错误；函数执行结束时这些存储单元自动被释放;
+
+3. 堆上分配：也叫做动态内存分配，程序运行时使用malloc()或new()函数申请的内存就是从堆上分配的，程序员可以自定义申请内存的大小，并且要自己负责在何时调用free()或者delete()函数释放内存，要注意内存泄露的问题。
+
+## 12.堆和栈的区别
+
+
+
+1）申请方式不同： 栈由系统分配和释放（存放函数的参数值、局部变量等）
+
+​				堆由用户手动申请和释放
+
+2）申请大小限制：
+
+​	栈空间有限，**栈是向下生长的一块连续的内存区域，栈顶的地址和栈的容量已经设定好了，**若申请的空间大于栈的剩余空间，则会报栈溢出错误
+
+​	堆通常是向高地址方向动态增长的非连续内存区域。操作系统或运行时使用链表等数据结构管理空闲内存块。内存分配时，管理器从空闲链表头开始遍历，采用首次适配策略，寻找第一个满足大小要求的空闲块，分配给程序。若空闲块较大，则拆分；否则直接从链表移除。堆的最大可用空间受限于系统的虚拟内存大小。
+
+
+3）申请效率
+
+​	栈由系统分配，效率较高，但程序员无法控制；
+
+​	堆由用户分配，效率低，容易产生内存碎片，用起来方便；
+
+## 13 、栈的作用
+
+栈的作用有：函数调用、中断处理、程序调试、操作系统中的任务调度，介绍如下：
+
+1） 函数调用：当一个函数被调用时，程序会把该函数的参数、返回地址、局部变量等信息存入栈中，当函数执行完成后，栈会依次弹出这些信息，并恢复调用函数前的状态（栈先进后出）；
+
+2） 中断处理：系统发生硬中断或软中断时，操作系统会自动保存当前进程的执行现场（包括CPU状态、程序计数器、寄存器等信息）到栈中，然后将CPU控制权转交给中断处理函数，中断处理函数执行完成后，栈会弹出之前保存的执行现场信息，恢复到中断前的状态；
+
+3） 程序调试：调试程序时，程序员可根据栈中的内容（如变量的值、函数调用栈、异常处理等）来查看当前程序的执行状态；
+
+4） 线程调度：栈是多线程编程的基石，每个线程都必须有一个自己的栈，用来存放本线程运行时各个函数的临时变量，和维护线程中函数调用和函数返回时的函数调用关系以及保存函数运行现场
+
+## 14.局部变量和全局变量的作用域和生命周期，是否可以同名
+
+
+
+作用域：局部变量的作用域是其所在的局部范围；全局变量的作用域是整个工程。如果想在当前源文件中使用工程内其他文件定义的变量，需在当前源文件中使用extern关键字进行声明。
+
+生命周期：局部变量的生命周期是进入作用域时生命周期开始，出作用域时生命周期结束；全局变量的生命周期是整个程序的生命周期。
+
+ 局部变量和全局变量可以同名（不建议），局部变量会屏蔽全局变量。
+
+
+
+
+## 15. 为什么static变量只初始化一次
+
+
+
+因为这些变量都存在静态存储区，具有记忆功能，
+
+静态局部变量、静态全局变量和全局变量都保存在静态存储区中，所以这些变量都具有“记忆”功能，初始化一次后不会被销毁，生命周期和程序相同，所以只需要初始化一次。
+
+## 16.sizeof 和strlen的区别
+
+1）数据类型不同
+
+​	sizeof是操作符（sizeof既是关键字，也是操作符），strlen是库函数
+
+2）操作的参数类型不同**：**
+
+​	sizeof 只关注占⽤内存空间的⼤⼩**，不关注内存中存放什么数据，*
+
+​	strlen()只能用char*类型变量做参数，计算以“ \0 ”结尾的字符串长度，、
+
+​	而sizeof后可接变量名、数据类型、函数等，sizeof后接变量名时可以不加括号，示例如
+
+```c
+int fun(void)
+{
+    return 10;
+}
+ 
+int main(void)
+{
+    int num = 100;
+ 
+    printf("%d\n", sizeof(num));			/* 结果为：4 */
+    printf("%d\n", sizeof(int));			/* 结果为：4 */
+    printf("%d\n", sizeof num);				/* 结果为：4 */
+    printf("%d\n", sizeof(fun()));          /* 结果为：4，结果取决于函数返回值的类型*/
+ 
+    printf("%d\n", sizeof("abcdef"));       /* 结果为：7，包含字符串最后的'/0' */
+    printf("%d\n", strlen("abcdef"));		/* 结果为：6，不包含字符串结尾的'/0' */
+ 
+    printf("%d\n", sizeof("\0"));           /* 结果为：2，字符串"\0"还有一个字符串结束符'\0' */
+    printf("%d\n",strlen("\0"));            /* 结果为：0，strlen用来计算以"\0"作为结束符的字符串长度 */
+    printf("%d\n", sizeof('\0'));           /* 结果为：4，'\0'的ASCLL代码值为0，等价于数字0 */
+    
+    return 0;
+}
+ 
+```
+
+3)执行时间不同
+
+​	sizeof是在编译程序时进行计算的，strlen是程序运行时计算的
+
+```c
+int main(void)
+{
+    char str[20] = "0123456789";
+    char* str2 = "abcdef";
+ 
+    printf("strlen(str) = %d\n", strlen(str));          /* 结果为字符串的长度：       10 */
+    printf("sizeof(str) = %d\n", sizeof(str));          /* 结果为数组的大小：         20 */
+    printf("strlen(str2) = %d\n", strlen(str2));        /* 结果为字符串的长度：        6 */
+    printf("sizeof(str2) = %d\n", sizeof(str2));        /* 结果为指针的大小(64为系统)：8 */
+ 
+    return 0;
+}
+```
+
+## 17 、不使用sizeof(),求变量占用字节数
+
+ 如下所示：(char* ） &value是value的地址，(char*)(&value + 1)是value的下一个地址，二者之差就是value类型数据的大小。
+
+```c
+#define MySizeof(value) (char*)(&value + 1) - (char*)&value
+ 
+int main(void)
+{
+	int i;
+	double f;
+	double* q;
+	
+	printf("%d\n", MySizeof(i));	/* 结果为：4 */
+	printf("%d\n", MySizeof(f));	/* 结果为：8 */
+	printf("%d\n", MySizeof(q));	/* 结果为：8 */
+	return 0;
+}
+```
+
+
+
+### 🔍 为什么用 `char*` 而不是其他类型？
+
+C 语言中，指针的算术操作是**基于其指向类型的大小**的。例如：
+
+- 若 `int* p`，则 `p + 1` 表示向后移动 `sizeof(int)` 字节。
+- 若 `double* p`，则 `p + 1` 表示向后移动 `sizeof(double)` 字节。
+- 但是：`char` 是 C 中**最小单位类型**，`sizeof(char) == 1` 字节。
+
+所以，**将任意地址强转为 `char\*` 后再参与指针运算，地址移动单位就是字节，结果才是真实的地址差值（单位为 byte）**。
+
+
+
+## 18 、短路求值
+
+```c
+#include <stdio.h>
+ 
+int main(void)
+{
+    int i = 6;
+    int j = 1;
+ 
+    if((i > 0) || ((j++) > 0))
+    printf("%d\n", j);        /* 结果为1，i>0条件成立后直接往下执行，右边的((j++) > 0)被短路，&&同理 */
+    return 0;  
+}
+```
+
+## 19、结构体和联合体的区别
+
+
+
+结构体：结构体中各个成员拥有自己的内存，各自互不干涉，结构体的总厂苏为所有结构体成员长度之和，遵循内存对齐原则。
+
+
+
+联合体：联合体内各成员共用一块内存，公用一个内存首地址，并且同时只有一个成员可以得到这块内存的使用权，联合体的大小至少能容纳最大的成员变量，并且为所有成员变量类型大小的整数倍。
+
+**区别**：内存利用方式不同，结构体中各成员拥有自己的内存，互不干涉；联合体中各成员共用一块内存；对结构体的成员赋值时，各变量互不影响，对联合体的变量赋值时，其他成员的值也将被改写。
+
+
+
+**型**，但它们的**内存布局方式**不同：
+
+🧩 一句话区别
+
+| 特性     | `struct` 结构体                         | `union` 联合体                   |
+| -------- | --------------------------------------- | -------------------------------- |
+| 内存布局 | 所有成员**各占一块独立空间**            | 所有成员**共享同一块内存**       |
+| 占用空间 | **总大小 ≥ 所有成员大小之和**（含对齐） | **总大小 = 最大成员的大小**      |
+| 同时访问 | **可以同时使用多个成员**                | **同一时间只能正确使用一个成员** |
+| 应用场景 | 描述一个对象的多个属性                  | 实现内存复用、节省空间           |
+
+
+
+
+
+🍊 举个栗子（以水果为例）
+
+✅ 结构体 struct：每种信息独立保存
+
+```c
+cCopy code#include <stdio.h>
+
+struct Fruit {
+    char name[10];   // 名字
+    float weight;    // 重量（kg）
+    float price;     // 单价（元）
+};
+
+int main() {
+    struct Fruit apple = { "apple", 0.5, 3.2 };
+    printf("Name: %s, Weight: %.1fkg, Price: %.2f元\n",
+           apple.name, apple.weight, apple.price);
+    return 0;
+}
+```
+
+> 输出：
+
+```c
+yaml
+
+
+Copy code
+Name: apple, Weight: 0.5kg, Price: 3.20元
+```
+
+🔍 内存布局如下（假设 `char[10]` + `float` + `float`）：
+
+```c
+less
+
+
+Copy code
+| name[10] | weight | price |   共约18字节（含对齐）
+```
+
+✅ 联合体 union：多个信息共享同一内存
+
+```c
+cCopy code#include <stdio.h>
+
+union Data {
+    int i;
+    float f;
+    char str[4];
+};
+
+int main() {
+    union Data d;
+    d.i = 1234;    // 写入 int
+    printf("d.i = %d\n", d.i);
+
+    d.f = 3.14;    // 覆盖成 float
+    printf("d.f = %f\n", d.f);
+
+    d.str[0] = 'A'; d.str[1] = 'B'; d.str[2] = '\0';
+    printf("d.str = %s\n", d.str);
+
+    return 0;
+}
+```
+
+> 输出可能是：
+
+```c
+iniCopy coded.i = 1234
+d.f = 3.140000
+d.str = AB
+```
+
+🔍 但注意：这些值会**相互覆盖**，因为它们都占用**同一块内存区域**。内存布局如下：
+
+```c
+Copy code
+| 共享的最大空间（4字节） |
+```
+
+
+
+
+
+
+
+“内存对齐”是指**变量在内存中按其数据类型的对齐规则进行存储**，以提高访问效率。结构体中为了满足每个成员的对齐要求，**编译器会在成员之间插入填充字节（padding）**，使得整体结构体的大小满足最大成员对齐的倍数。
+
+### 🔹 一、内存对齐规则简述：
+
+1. 每个成员的地址必须是该成员大小（或编译器指定的对齐值，通常是4或8）的整数倍。
+2. 结构体总大小必须是最大成员大小的整数倍。
+
+🔹 二、例子对比说明结构体和联合体 + 对齐行为：
+
+结构体示例：
+
+```c
+cCopy code#include <stdio.h>
+
+struct S {
+    char a;    // 1 字节
+    int b;     // 4 字节
+    short c;   // 2 字节
+};
+
+int main() {
+    struct S s;
+    printf("sizeof(S) = %zu\n", sizeof(s));
+    return 0;
+}
+```
+
+内存布局分析（假设int对齐为4，short为2）：
+
+```c
+rCopy code地址：| a | pad(3字节) | b(4字节) | c(2字节) | pad(2字节) |
+大小：总共 12 字节（不是 1+4+2=7，是经过对齐后的）
+```
+
+联合体示例：
+
+```c
+cCopy codeunion U {
+    char a;    // 1 字节
+    int b;     // 4 字节
+    short c;   // 2 字节
+};
+
+int main() {
+    union U u;
+    printf("sizeof(U) = %zu\n", sizeof(u));
+    return 0;
+}
+```
+
+c内存布局分析：
+
+- 联合体所有成员**共用同一段内存**，大小取决于**最大成员的大小**。
+- 所以此处 `sizeof(U)` 为 4。
+
+
+
+
+
+### 🔹 三、结构体 vs 联合体 区别总结：
+
+| 项目         | 结构体（struct）                              | 联合体（union）                                  |
+| ------------ | --------------------------------------------- | ------------------------------------------------ |
+| 内存分配     | 所有成员都有独立空间，大小为所有成员大小+填充 | 所有成员共用一块空间，大小为最大成员大小         |
+| 访问方式     | 可以同时访问多个成员                          | 任何时刻只能安全访问一个成员                     |
+| 使用场景     | 存储多个不同属性值                            | 节省空间、用于实现类型复用，如变长类型、协议帧等 |
+| 内存对齐影响 | 结构体中常有填充字节                          | 联合体通常无填充，只对齐最大成员要求             |
+
+
+
+## 20 什么是内存泄露
+
+
+
+ 内存泄漏是指程序中已经分配的内存未能成功释放，导致可用内存逐渐减少的现象。在程序运行过程中，如果反复发生内存泄漏，最终可能会导致系统可用内存耗尽，从而影响程序的性能或导致程序崩溃。 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 3. RTOS
+
+已经上传
+
+"C:\Users\jkx-pig\Documents\WeChat Files\wxid_28c7brmd4irv22\FileStorage\File\2025-07\RT-Thread完全开发手册之快速入门.pdf"
+
+
+
+# 4. Cmake
+
+
+
+### Cmake  语法  
+
+
+
+在build  目录  cmake   然后make 
+
+  #### 01.  set()   file()/aux_source_directory  add_excutable()
+
+基础
+
+构建一个 build目录  进入到buile目录，执行cmake .. *(这个..路径是CMakeLists.txt文件所在的目录)*
+
+![image-20250715145635290](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715145635290.png)
+
+```cmake
+CMakeLists.txt
+#项目名
+project(test)
+#指定Cmake的最低版本
+cmake_minimum_required(VERSION 3.0)
+
+set(CMAKE_CXX_STANDARD 11)
+
+#设置变量
+set(SOR a.cpp  b.cpp  c.cpp)
+#文件太多 不能一个一个都写出来  通过两种文件搜索的方式
+aux_source_directory(${PROJECT_SOURCE_DIR} SOR) #PROJECT_SOURCE_DIR是cmake .. 的地址，搜索所有的.cpp .c .h 不能递归
+
+file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp) # 在目录下递归搜索，  CMAKE_CURRENT_SOURCE_DIR（搜索指定的.cpp 递归）是CMakeList.txt 文件所在目录
+
+#设置输出路径 宏定义
+set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR}) 
+add_executable(test &{SRC})
+
+
+```
+
+✅ 总结一句话：
+
+> CMake 不需要 `.h` 文件去参与编译，只要 `.cpp` 文件引用到了正确的 `.h`，编译器就能自动找到并使用。你没写 `.h` 也能编译成功，是完全合理的。
+
+
+
+
+
+#### 02  include   src    build  
+
+源文件和头文件分开了   要告诉编译器头文件所在的位置  要不找不到  
+
+add_drictories(&{CMAKE_CURRENT_SOURCE_DIR}/include)
+
+![image-20250715150543720](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715150543720.png)
+
+```cmake
+ project(test)
+cmake_minimum_requiredVERSION 3.0()
+set(CMAKE_CXX_STANDARD  11)
+
+file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/sec/*.cpp)
+# 设置头文件搜索路径.h
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)  #等同于给编译器加了参数：-I/path/to/your/project/include
+#添加库  static  share
+#add_library(calc SHARED ${SRC})
+
+set(EXECUTABLE  ${CMAKE_CURRENT_SOURCE_DIR} )
+add_executable(text &{SRC})
+
+```
+
+
+
+```cmake
+# cmake 时构建一个build目录（保存cmake生成的中间产物） cmake ..(这个..路径是CMakeLists.txt文件所在的目录)
+#项目名 不写可不可以
+project(test)
+#指定cmake版本  高于3.0
+cmake_minimum_required(VERSION 3.0)
+
+#设置变量
+#set(SOR add.cpp div.cpp mult.cpp sub.cpp main.cpp)
+#文件搜索的两种方式
+#aux_source_directory(${PROJECT_SOURCE_DIR} SOR)  #   PROJECT_SOURCE_DIR（搜索所有的.cpp .c .h文件 不能递归）是cmake 后的地址
+
+#[[注意  1.file只是说把路径列表给SOR   但是并没有给编译器，.h需要给编译器编译器才知道去哪里寻找
+file(GLOB SOR ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+file(GLOB SOR_H ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h) 
+set(SOR ${SOR} ${SOR_H})  # 合并列表
+虽然你把头文件路径放入了 SOR 变量
+但 CMake 不会自动 把这些路径加入编译器的头文件搜索路径
+编译器仍然不知道去哪里找 head.h
+
+]]
+file(GLOB SOR ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)  #   CMAKE_CURRENT_SOURCE_DIR（搜索指定的.cpp 递归）是CMakeList.txt 文件所在目录
+# 设置头文件搜索路径
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include) 
+
+
+#设置输出路径 宏定义
+set(EXECUTABLE_OUTPUT_PATH  ${PROJECT_SOURCE_DIR})  #PROJECT_SOURCE_DIR宏是cmake 后面跟的路径 
+#生成可执行文件
+add_executable(test ${SOR})
+
+```
+
+
+
+#### 03 静态库  动态库  
+
+
+
+总体流程  一样的
+
+add_library()  //生成库
+
+link_directories()  //告诉库的位置
+
+add_executable() //生成可执行文件
+
+target_link_libraries(test  cale) //  告诉某个可执行文件链接哪个库
+
+
+
+```cmake
+project(test)
+    
+cmake_minimum_required(VERSION 3.0)
+set(CMAKE_CXX_STANDARD 11)
+    
+    
+file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+#库的输出路径
+#  静态库和动态库都可以使用 LIBRARY_OUTPUT_PATH 针对动态库具有可执行权限还可以使用EXECUTABLE_OUTPUT_PATH
+set(LIBRARY_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+
+#添加静态库 
+add_library(cale_a STATIC ${SRC})
+
+#添加动态库
+add_library(cale_s SHARED ${SRC})
+
+
+link_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib1)# 告诉静态库的文件位置
+add_executable(test1 ${SRC})  
+target_link_libraries(test1 cale_a)  #必须在add_execurable后面是给某个“已经存在的目标”（target）设置链接库属性。
+
+# 有了库要发布给使用者  动态库和静态库都是二进制文件 .cpp是文本的格式  所以发布的时候还要有include中的.h文件
+
+#测试创建出来的静态库和动态库能不能用  需要先发布 库和头文件
+# #动态库的链接
+link_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib2)
+add_executable(test2 ${SRC})
+target_link_libraries(test2  cale) #这里给出动态库的链接  TARGET
+    
+```
+
+是的，✅ **`target_link_libraries(test1 cale_a)` 必须在 `add_executable(test1 ...)` 之后执行**，这是 **CMake 的语法规定**，不是建议，而是硬性规则。
+
+📌 原因解释（一定要在后面）
+
+CMake 的设计逻辑是：
+
+> `target_link_libraries()` 是给某个“已经存在的目标”（target）设置链接库属性。
+
+所以你必须 **先创建这个目标**（不管是可执行文件 `add_executable()`，还是库 `add_library()`），CMake 才允许你对它设置链接信息。
+
+#### 05  message
+
+打印消息的
+
+```cmake
+#打印消息
+cmake_minimum_required(VERSION 3.0)
+project(message)
+set(CMAKE_CXX_STANDARD 11)
+
+
+file(GLOB  SRC ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+message( "xxxxxxxxxxxxxx")
+link_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib2)
+message(STATUS "11111xxxxxxxxxxxxxx")
+add_executable(test ${SRC})
+#输出变量
+message(${SRC})
+message(STATUS "11111xxxxxxxxxxxxxx")
+```
+
+
+
+#### 06 list 
+
+```
+#[[字符串的操作    
+list（APPEND src  item1  item2  ... )   
+list(REMOVE_ITEM src  item1  item2  ...)   
+获取长度list(LENGTH src  output_var)  
+获取元素list(GET SRC -1 output_var)
+                list(JOIN src  sep  output_var)
+                list(find  src  item  output_var)
+                list(insert src index item1 item2 ...)
+插入头           list(prepend src item1 item2 ...)
+弹出最后一个元素  list(POP_BACK src output_var)
+弹出头           list(POP_FRONT src output_var)
+移除列表中重复元素 list(REMOVE_DUPLICATES src)
+将指定索引删除    list(REMOVE_AT src index)
+列表反转         list(REVERSE src)
+列表排序         list(SORT src comparator)
+]]
+#list的其他操作   
+```
+
+
+
+```cmake
+cmake_minimum_required(VERSION 3.0)
+project(test)
+set(CMAKE_CXX_STANDARD 11)
+
+message("===========配置开始============")
+file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+file(GLOB APP ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+#删除绝对路径
+list(REMOVE_ITEM SRC ${APP}) 
+message("SRC:${SRC}")
+message("APP:${APP}")
+message("===========配置完成============")
+
+#创建动态库
+message("===========创建动态库============")
+set(LIBRARY_OUTPUT_PATH  ${CMAKE_CURRENT_SOURCE_DIR}/lib_so)
+add_library(calc SHARED ${SRC})
+message("===========创建动态库完成============")
+
+link_directories(${LIBRARY_OUTPUT_PATH})
+set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+add_executable(test ${APP})
+target_link_libraries(test calc)
+
+```
+
+#### 07 宏定义  
+
+*#进行宏定义  自定义 帮我们把程序执行期间需要的宏定义出来  add_definitions(-D宏)*
+
+很好！我们来详细讲清楚 CMake 中的：
+
+> ✅ `add_definitions(-DDEBUG)` 的含义、作用、使用时机，以及现代替代方式。
+
+✅ 一句话说明：
+
+```
+cmake
+
+
+CopyEdit
+add_definitions(-DDEBUG)
+```
+
+表示：
+
+> **给所有后续的源文件添加一个预处理宏定义 `DEBUG`，等效于在编译时加上 `-DDEBUG`。**
+
+✅ 它等价于手动 g++ 命令的写法：
+
+```
+bash
+
+
+CopyEdit
+g++ -DDEBUG main.cpp -o main
+```
+
+这样在 C++ 源文件里你就可以用：
+
+```
+cppCopyEdit#ifdef DEBUG
+    std::cout << "Debugging info..." << std::endl;
+#endif
+```
+
+```Cmake
+add_difinition(-DDEBUG)
+
+cmake_minimum_required(VERSION 3.0)
+project(test)
+set(CMAKE_CXX_STANDARD 11)
+
+message("===========配置开始============")
+file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+file(GLOB APP ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+#删除绝对路径
+list(REMOVE_ITEM SRC ${APP}) 
+message("SRC:${SRC}")
+message("APP:${APP}")
+message("===========配置完成============")
+
+#创建动态库
+message("===========创建动态库============")
+set(LIBRARY_OUTPUT_PATH  ${CMAKE_CURRENT_SOURCE_DIR}/lib_so)
+add_library(calc SHARED ${SRC})
+message("===========创建动态库完成============")
+
+link_directories(${LIBRARY_OUTPUT_PATH})
+set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+add_executable(test ${APP})
+target_link_libraries(test calc)
+
+```
+
+#### 08 父子关系的复杂目录
+
+*[add_subdirectory(lib)  父子关系的复杂目录  子目录也包含cmakelists.txt* 
+
+*子目录可以使用父目录的变量（全局变量）   父目录不可以使用子目录（局部）* 
+
+*]]*
+
+```cmake
+add_definitions(-DDEBUG)
+cmake_minimum_required(VERSION 3.0)
+project(test)
+set(CMAKE_CXX_STANDARD 11)
+
+message("===========配置开始============")
+file(GLOB SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+file(GLOB APP ${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+#删除绝对路径
+list(REMOVE_ITEM SRC ${APP}) 
+message("SRC:${SRC}")
+message("APP:${APP}")
+message("===========配置完成============")
+
+#创建动态库
+message("===========创建动态库============")
+set(LIBRARY_OUTPUT_PATH  ${CMAKE_CURRENT_SOURCE_DIR}/lib_so)
+add_library(calc SHARED ${SRC})
+message("===========创建动态库完成============")
+
+link_directories(${LIBRARY_OUTPUT_PATH})
+set(EXECUTABLE_OUTPUT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+add_executable(test ${APP})
+target_link_libraries(test calc)
+
+```
+
+
+
+
+
+很好，这次我们讲 CMake 中的一个重要命令：
+
+> ✅ `add_subdirectory` —— 用于**将子目录加入当前构建系统**，支持递归构建多个模块或组件。
+
+
+
+
+
+✅ 一句话理解
+
+```
+cmake
+
+
+CopyEdit
+add_subdirectory(src)
+```
+
+表示：
+
+> “请进入 `src/` 目录，加载它的 `CMakeLists.txt` 并把它当作当前项目的一部分来一起构建。”
+
+📘 它的作用：
+
+| 功能                         | 说明                                           |
+| ---------------------------- | ---------------------------------------------- |
+| 🔨 **模块化管理源码**         | 每个模块或组件独立放在子目录中，便于维护和分工 |
+| 🔁 **递归构建**               | 会递归调用子目录下的 `CMakeLists.txt` 文件     |
+| 🔗 **支持 target 共享与依赖** | 主目录可以链接子目录中生成的库或目标           |
+
+✅ 示例场景
+
+你的工程结构如下：
+
+```
+csharpCopyEditproject/
+├── CMakeLists.txt          # 顶层
+├── main.cpp
+├── math/
+│   ├── CMakeLists.txt      # 子目录
+│   ├── add.cpp
+│   └── add.h
+```
+
+顶层 `CMakeLists.txt`
+
+```
+cmakeCopyEditcmake_minimum_required(VERSION 3.10)
+project(MyProject)
+
+add_subdirectory(math)  # 加入 math 子目录
+
+add_executable(main main.cpp)
+target_link_libraries(main mathlib)  # 链接子目录里的库
+```
+
+子目录 `math/CMakeLists.txt`
+
+```
+cmakeCopyEditadd_library(mathlib add.cpp)
+target_include_directories(mathlib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+```
+
+main.cpp`
+
+```
+cppCopyEdit#include "add.h"
+#include <iostream>
+
+int main() {
+    std::cout << add(2, 3) << std::endl;
+    return 0;
+}
+```
+
+✅ 执行结果：
+
+- CMake 会递归进入 `math/` 目录
+- 编译 `mathlib` 静态库
+- 主程序 `main` 链接这个库
+- 一起构建完成，目标可用
+- 
 
 
 
@@ -6924,4 +7966,58 @@ free -h                                       # 以人类可读的格式显示�
 
 
 ```
+
+
+
+# 7.嵌入式
+
+
+
+## 嵌入式通信
+
+
+
+UART /II2 GPIO/TCP /IP /SPI 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 8.QT
+
+
+
+
+
+
+
+# 9.操作系统
+
+
+
+# 10. 计算机网络
 
