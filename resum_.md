@@ -19,7 +19,7 @@
 深拷贝：拷贝值对象，指针对象开辟新的地址存放值，内个对象拥有自己的副本
 ```
 
-![image-20250714110658850](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714110658850.png)
+![image-20250714110658850](assets/image-20250714110658850.png)
 
 问题  ：
 
@@ -102,9 +102,9 @@ std:: weak_ptr //弱指针
 
 自动分配内存
 
-![image-20250714113636153](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714113636153.png)
+![image-20250714113636153](assets/image-20250714113636153.png)
 
-![image-20250714113729628](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714113729628.png)
+![image-20250714113729628](assets/image-20250714113729628.png)
 
 
 
@@ -118,7 +118,7 @@ std:: weak_ptr //弱指针
 
 > **`unique_ptr` 用于资源的独占管理，自动释放内存，防止泄漏和误用，特别适合对象生命周期清晰、不需要共享的场景。**
 
-![image-20250714113945480](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714113945480.png)
+![image-20250714113945480](assets/image-20250714113945480.png)
 
 三种创建方式
 通过已有裸指针创建
@@ -130,11 +130,11 @@ unique_ptr实现了->与‘
 可以通过->调用成员函数
 可以通过*调用dereferencing
 
-![image-20250714114134196](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714114134196.png)
+![image-20250714114134196](assets/image-20250714114134196.png)
 
 
 
-![image-20250714115251523](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714115251523.png)
+![image-20250714115251523](assets/image-20250714115251523.png)
 
 局部作用域{}
 
@@ -148,7 +148,7 @@ cat1=nullptr;
 
 通过原始指针赋值后要销毁原始指针，因为他会跟原始指针改变，达不到独占的效果。
 
-![image-20250714115835941](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714115835941.png)
+![image-20250714115835941](assets/image-20250714115835941.png)
 
 ```
 ❗ 为什么不应该这样写？
@@ -182,7 +182,7 @@ unique_ptr<cat> cat2{new cat("cat")}
 unique_ptr<car> cat=make_unique<cat>("mini")
 ```
 
-![image-20250714121242323](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714121242323.png)
+![image-20250714121242323](assets/image-20250714121242323.png)
 
 自动释放  不需要手动delet
 
@@ -193,9 +193,9 @@ unique_ptr<car> cat=make_unique<cat>("mini")
 
 
 
-![image-20250714121521555](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714121521555.png)
+![image-20250714121521555](assets/image-20250714121521555.png)
 
-![image-20250714121556965](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714121556965.png)
+![image-20250714121556965](assets/image-20250714121556965.png)
 
 
 
@@ -269,9 +269,9 @@ p2.reset();                                               // count=0 → 释放�
 
 //如果改变a  b也会变  改变b  a也会变
 
-![image-20250714145535816](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714145535816.png)
+![image-20250714145535816](assets/image-20250714145535816.png)
 
-![image-20250714145607096](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714145607096.png)
+![image-20250714145607096](assets/image-20250714145607096.png)
 
 
 
@@ -289,7 +289,7 @@ b.use_count();//获取计数值  2
 
 
 
-![image-20250714150654221](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714150654221.png)
+![image-20250714150654221](assets/image-20250714150654221.png)
 
 
 
@@ -318,7 +318,7 @@ cout<<cat.get_count();
 
 #### 5. shared_ptr与函数
 
-![image-20250714151140267](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714151140267.png)
+![image-20250714151140267](assets/image-20250714151140267.png)
 
 1。参数
 
@@ -362,15 +362,15 @@ cout << "------ yz ------" << endl;
 
 将unique_ptr  转化share_ptr
 
-![image-20250714152753571](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714152753571.png)
+![image-20250714152753571](assets/image-20250714152753571.png)
 
- ![image-20250714152919576](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714152919576.png)
+ ![image-20250714152919576](assets/image-20250714152919576.png)
 
 
 
-![image-20250714153054603](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714153054603.png)
+![image-20250714153054603](assets/image-20250714153054603.png)
 
-![image-20250714153228509](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714153228509.png)
+![image-20250714153228509](assets/image-20250714153228509.png)
 
 #### 7. weak_ptr是shared_ptr的补充
 
@@ -378,15 +378,15 @@ cout << "------ yz ------" << endl;
 
 弱引用
 
-![image-20250714153320299](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714153320299.png)
+![image-20250714153320299](assets/image-20250714153320299.png)
 
 
 
-![image-20250714153419804](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714153419804.png)
+![image-20250714153419804](assets/image-20250714153419804.png)
 
 
 
-![image-20250714153452818](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714153452818.png)
+![image-20250714153452818](assets/image-20250714153452818.png)
 
 我不理解   没懂为什么会锁死
 
@@ -502,17 +502,17 @@ w.get_count();//2
 
 ```
 
-![image-20250714160018551](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714160018551.png)
+![image-20250714160018551](assets/image-20250714160018551.png)
 
 
 
-![image-20250714160315252](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714160315252.png)
+![image-20250714160315252](assets/image-20250714160315252.png)
 
 最下面的改成weak_ptr就好了   weak_ptr=shared_ptr是可以的
 
 
 
-![image-20250714160333234](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714160333234.png)
+![image-20250714160333234](assets/image-20250714160333234.png)
 
 ##### 1. waker_ptr解决了什么问题
 
@@ -520,21 +520,21 @@ w.get_count();//2
 
 两个或多个对象中互相拥有对方的shared_ptr时，会出现计数值不为0， 内存泄漏，对象没有被释放
 
-![image-20250714210304156](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714210304156.png)
+![image-20250714210304156](assets/image-20250714210304156.png)
 
 
 
 可以使用裸指针解决，但是时刻要关注是否对象被释放
 
-![image-20250714210439796](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714210439796.png)
+![image-20250714210439796](assets/image-20250714210439796.png)
 
-![image-20250714210452124](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714210452124.png)
+![image-20250714210452124](assets/image-20250714210452124.png)
 
 ##### 2. weaker_ptr的底层原理
 
 计数值并不会—++；没有* 和->
 
-![image-20250714210547058](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714210547058.png)
+![image-20250714210547058](assets/image-20250714210547058.png)
 
 共享控制块和引用计数机制：
 
@@ -544,7 +544,7 @@ w.get_count();//2
 4. 析构时源自递减
 5. weak_ptr不操作M_use_count，故不影响对象生命周期
 
-![image-20250714211235579](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714211235579.png)
+![image-20250714211235579](assets/image-20250714211235579.png)
 
  
 
@@ -562,7 +562,7 @@ shared_ptr  多个对象共享一个资源，维护一个计数值,get_counter�
 
 weak_ptr可以转化为shared_ptr(强转或者  .lock())
 
-![image-20250714211439052](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714211439052.png)
+![image-20250714211439052](assets/image-20250714211439052.png)
 
 ##### 4.如何使用weak_ptr
 
@@ -576,7 +576,7 @@ lock
 
 ### 2. llamaba 表达式  function   lambda bind之间的关系
 
-![image-20250714175250289](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714175250289.png)
+![image-20250714175250289](assets/image-20250714175250289.png)
 
 
 
@@ -641,11 +641,11 @@ int main() {
 
 
 
-> ![image-20250714171007080](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714171007080.png)
+> ![image-20250714171007080](assets/image-20250714171007080.png)
 
-​	![image-20250714171023262](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714171023262.png)
+​	![image-20250714171023262](assets/image-20250714171023262.png)
 
-![image-20250714171040036](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714171040036.png)
+![image-20250714171040036](assets/image-20250714171040036.png)
 
 ```c++
 function<void(int)> f_hello=hello;
@@ -660,7 +660,7 @@ function<void(int)>  f3=&StaticFunc::hello;
 
 
 
-![image-20250714171455548](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714171455548.png)
+![image-20250714171455548](assets/image-20250714171455548.png)
 
 ##### 2. 保存仿函数 闭包（可以有状态的函数  比如操作i 幂不等的操作）
 
@@ -670,9 +670,9 @@ function<void(int)>  f3=&StaticFunc::hello;
 
 ​	    有状态的函数对象成为闭包
 
-![image-20250714175212773](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714175212773.png)
+![image-20250714175212773](assets/image-20250714175212773.png)
 
-![image-20250714171418938](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714171418938.png)
+![image-20250714171418938](assets/image-20250714171418938.png)
 
 ```c
 function(void<int>) f4=Hello();//仿函数  函数对象
@@ -694,7 +694,7 @@ Chello c;
 h6(&c,7);
 ```
 
-![image-20250714173242389](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714173242389.png)
+![image-20250714173242389](assets/image-20250714173242389.png)
 
 
 
@@ -720,13 +720,13 @@ h6(&c,7);
 
 ​	  根据参数列表重载operator()  如下  (下面的&  得去掉  是值捕获)
 
-![image-20250714174854836](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714174854836.png)
+![image-20250714174854836](assets/image-20250714174854836.png)
 
 编译器编译的时候会展开如下：
 
-![image-20250714174821233](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714174821233.png)
+![image-20250714174821233](assets/image-20250714174821233.png)
 
-![image-20250714174940525](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714174940525.png)
+![image-20250714174940525](assets/image-20250714174940525.png)
 
  
 
@@ -754,13 +754,13 @@ h7(8)//内部i=2   外部i=0;
 
 { //外部的值也会修改}
 
-![image-20250714175150634](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714175150634.png)
+![image-20250714175150634](assets/image-20250714175150634.png)
 
 
 
 ##### 5. 保存bind返回的函数对象
 
-![image-20250714181600582](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714181600582.png)
+![image-20250714181600582](assets/image-20250714181600582.png)
 
 bind函数适配器：用来通过**绑定函数以及函数参数**的方式生成函数对象；生成				闭包的
 
@@ -786,13 +786,13 @@ f10(1000);
 
 绑定普通函数
 
-![image-20250714180648925](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714180648925.png)
+![image-20250714180648925](assets/image-20250714180648925.png)
 
 绑定类成员函数
 
 
 
-![image-20250714181341806](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714181341806.png)
+![image-20250714181341806](assets/image-20250714181341806.png)
 
 
 
@@ -802,13 +802,13 @@ f10(1000);
 
 ### 3. 自动类型推导auto 、decltype
 
-![image-20250714202754495](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714202754495.png)
+![image-20250714202754495](assets/image-20250714202754495.png)
 
 
 
 #### 1. auto（就是个赋值的运算）
 
-![image-20250714201017193](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714201017193.png)
+![image-20250714201017193](assets/image-20250714201017193.png)
 
  推到变量类型
 
@@ -831,7 +831,7 @@ f10(1000);
 
 容器时
 
-![image-20250714202224048](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714202224048.png)
+![image-20250714202224048](assets/image-20250714202224048.png)
 
 
 
@@ -847,17 +847,17 @@ exp:
 
 ​	左值-》左值引用
 
-![image-20250714202244653](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714202244653.png)
+![image-20250714202244653](assets/image-20250714202244653.png)
 
-![image-20250714202340206](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714202340206.png)
+![image-20250714202340206](assets/image-20250714202340206.png)
 
-![image-20250714202438135](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714202438135.png)
+![image-20250714202438135](assets/image-20250714202438135.png)
 
 返回左值的引用：
 
-![image-20250714202609299](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714202609299.png)
+![image-20250714202609299](assets/image-20250714202609299.png)
 
-![image-20250714202653587](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714202653587.png)
+![image-20250714202653587](assets/image-20250714202653587.png)
 
 
 
@@ -889,15 +889,15 @@ exp:
 
 指定某个虚函数不能再派生类中被覆盖、某给类不能派生
 
-![image-20250714204512547](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714204512547.png)
+![image-20250714204512547](assets/image-20250714204512547.png)
 
 
 
-![image-20250714204601597](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714204601597.png)
+![image-20250714204601597](assets/image-20250714204601597.png)
 
 
 
-![image-20250714204704289](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714204704289.png)
+![image-20250714204704289](assets/image-20250714204704289.png)
 
 
 
@@ -913,11 +913,11 @@ exp:
 
 保证重写函数和基类函数具有相同的签名
 
-![image-20250714205027954](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714205027954.png)
+![image-20250714205027954](assets/image-20250714205027954.png)
 
 
 
-![image-20250714204258789](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714204258789.png)
+![image-20250714204258789](assets/image-20250714204258789.png)
 
 
 
@@ -925,7 +925,7 @@ exp:
 
 #### 总结
 
-![image-20250714204803328](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714204803328.png)
+![image-20250714204803328](assets/image-20250714204803328.png)
 
 
 
@@ -947,7 +947,7 @@ exp:
 
 ​			解引用表达式 *a=
 
-​			![image-20250714213533461](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714213533461.png)
+​			![image-20250714213533461](assets/image-20250714213533461.png)
 
 
 
@@ -973,9 +973,9 @@ exp:
 
 ​		通过std::move\
 
-​		![image-20250714214044660](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714214044660.png)
+​		![image-20250714214044660](assets/image-20250714214044660.png)
 
-![image-20250714214323724](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714214323724.png)![image-20250714214354075](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714214354075.png)
+![image-20250714214323724](assets/image-20250714214323724.png)![image-20250714214354075](assets/image-20250714214354075.png)
 
 
 
@@ -991,7 +991,7 @@ exp:
 
 
 
-![image-20250714214605096](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714214605096.png)
+![image-20250714214605096](assets/image-20250714214605096.png)
 
 功能差异：左值引用避免对象的拷贝（传参  函数返回值）
 
@@ -1003,19 +1003,19 @@ const左值的引用能指向右值，局限是不能修改 （右值不能修�
 
 右值引用通过std::move（）转化为左值
 
-![image-20250714214916288](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714214916288.png)
+![image-20250714214916288](assets/image-20250714214916288.png)
 
-![image-20250714214932422](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714214932422.png)
+![image-20250714214932422](assets/image-20250714214932422.png)
 
 移动语义解决深拷贝问题  （ 移动后源资源为null）
 
-![image-20250714215206101](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714215206101.png)
+![image-20250714215206101](assets/image-20250714215206101.png)
 
-![image-20250714215328376](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714215328376.png)
+![image-20250714215328376](assets/image-20250714215328376.png)
 
 
 
-![image-20250714215723790](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714215723790.png)
+![image-20250714215723790](assets/image-20250714215723790.png)
 
 
 
@@ -1023,19 +1023,19 @@ const左值的引用能指向右值，局限是不能修改 （右值不能修�
 
 #### 3.实现完美转发
 
-![image-20250714215857833](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714215857833.png)
+![image-20250714215857833](assets/image-20250714215857833.png)
 
 函数模板可以将自己的参数完美的转发给内部调用的其他函数
 
 完美是指：
 
-![image-20250714220045661](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714220045661.png)
+![image-20250714220045661](assets/image-20250714220045661.png)
 
 
 
-![image-20250714220604903](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714220604903.png)
+![image-20250714220604903](assets/image-20250714220604903.png)
 
-![image-20250714220652324](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250714220652324.png)
+![image-20250714220652324](assets/image-20250714220652324.png)
 
 
 
@@ -1051,9 +1051,9 @@ C++独有（多重继承特性）
 
 ​	问题：A会被构造两次，浪费存储空间 造成二义性
 
-![image-20250715093747848](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715093747848.png)
+![image-20250715093747848](assets/image-20250715093747848.png)
 
-![image-20250715093907336](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715093907336.png)
+![image-20250715093907336](assets/image-20250715093907336.png)
 
 有两个number,说明构造了两个A
 
@@ -1061,15 +1061,15 @@ C++独有（多重继承特性）
 
 虚继承：子类只继承一次父类的父类  virtual 关键字
 
-![image-20250715094046601](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715094046601.png)
+![image-20250715094046601](assets/image-20250715094046601.png)
 
-![image-20250715094123220](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715094123220.png)
+![image-20250715094123220](assets/image-20250715094123220.png)
 
 虚继承底层实现原理：  g++ -fdump-class-hierarchy   *.cpp   gcc8.0前
 
 ​					g++ -fdump-lang-class   *.cpp    gcc8.0后
 
-![image-20250715094434765](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715094434765.png)
+![image-20250715094434765](assets/image-20250715094434765.png)
 
 
 
@@ -1077,17 +1077,17 @@ C++独有（多重继承特性）
 
 虚继承会为A仍然生成一个虚函数表，B1和B2都会指向同一个虚函数表，类A和A的虚表一一绑定。
 
-![image-20250715095249783](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715095249783.png)
+![image-20250715095249783](assets/image-20250715095249783.png)
 
 
 
-![image-20250715095310382](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715095310382.png)
+![image-20250715095310382](assets/image-20250715095310382.png)
 
-![image-20250715095347738](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715095347738.png)
+![image-20250715095347738](assets/image-20250715095347738.png)
 
 
 
-![image-20250715095804997](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715095804997.png)
+![image-20250715095804997](assets/image-20250715095804997.png)
 
 
 
@@ -1107,7 +1107,7 @@ C++独有（多重继承特性）
 
 ​	private:只对自己开放  通过友元类打破限定 friend class B
 
-![image-20250715100312960](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715100312960.png)
+![image-20250715100312960](assets/image-20250715100312960.png)
 
 属性：
 
@@ -1127,7 +1127,7 @@ C++独有（多重继承特性）
 
 ​	private:原  public  \protected变成private.
 
-![image-20250715100926716](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715100926716.png)
+![image-20250715100926716](assets/image-20250715100926716.png)
 
 
 
@@ -1137,7 +1137,7 @@ public:
 
 ​	using A::C;
 
-![image-20250715101137337](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715101137337.png)
+![image-20250715101137337](assets/image-20250715101137337.png)
 
 
 
@@ -1175,7 +1175,7 @@ public:
 
 4. 连接：将多个文件中的符号表汇总合并，	
 
-![image-20250715102523619](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715102523619.png)
+![image-20250715102523619](assets/image-20250715102523619.png)
 
 
 
@@ -1191,7 +1191,7 @@ public:
 
 objdump -t *.o   查看符号表            ——ZN+类长度—+类名+函数长度函数名+E+参数列表类型的首字母
 
-![image-20250715103314776](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715103314776.png)
+![image-20250715103314776](assets/image-20250715103314776.png)
 
 
 
@@ -1223,9 +1223,9 @@ objdump -t *.o   查看符号表            ——ZN+类长度—+类名+函数�
 
 在类对象的前8个字节 是虚函数表指针
 
-![image-20250715104340177](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715104340177.png)
+![image-20250715104340177](assets/image-20250715104340177.png)
 
-![image-20250715104734596](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715104734596.png)
+![image-20250715104734596](assets/image-20250715104734596.png)
 
 ✅ 是的 —— **确实有两个虚函数表（vtable）**
 
@@ -1337,7 +1337,7 @@ Drive_vtable = {
 
 先父亲在器官在自己（顺序执行）
 
-![image-20250715111306618](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715111306618.png)
+![image-20250715111306618](assets/image-20250715111306618.png)
 
 
 
@@ -1365,7 +1365,7 @@ Drive_vtable = {
 
 ​	继承下虚函数表指针的赋值过程：vptr先=基类虚函数表地址（基类构造函数），然后vptr=子类的虚函数表地址（子类构造函数）
 
-![image-20250715114306844](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715114306844.png)
+![image-20250715114306844](assets/image-20250715114306844.png)
 
 
 
@@ -1456,11 +1456,11 @@ int main() {
 
 设置虚析构函数是有代价的，编译器会为类生成虚函数表，每个对象都有虚函数表指针，增大了资源消耗
 
-![image-20250715115204088](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715115204088.png)![image-20250715115504216](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715115504216.png)
+![image-20250715115204088](assets/image-20250715115204088.png)![image-20250715115504216](assets/image-20250715115504216.png)
 
 作用：继承下 为了使子类的析构函数能正常调用，需要基类的析构设置为虚析构。
 
-​	![image-20250715120043340](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715120043340.png)
+​	![image-20250715120043340](assets/image-20250715120043340.png)
 
 当然可以，咱们来**通俗+形象地解释一下**这句代码在干嘛：
 
@@ -1608,7 +1608,7 @@ cppCopyEditfor (Base* p : objs)
    1. 接口改变（参数个数  类型等等） 都需要重新编译
    2. 接口实现改变 ： 静态库和.c文件都需重新编译        只需重新编译动态库
 
-![image-20250715144322206](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715144322206.png)
+![image-20250715144322206](assets/image-20250715144322206.png)
 
 
 
@@ -5674,7 +5674,7 @@ va_arg用来获取可变参部分的参数，va_start初始化时将va_arg设置
 
 构建一个 build目录  进入到buile目录，执行cmake .. *(这个..路径是CMakeLists.txt文件所在的目录)*
 
-![image-20250715145635290](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715145635290.png)
+![image-20250715145635290](assets/image-20250715145635290.png)
 
 ```cmake
 CMakeLists.txt
@@ -5713,7 +5713,7 @@ add_executable(test &{SRC})
 
 add_drictories(&{CMAKE_CURRENT_SOURCE_DIR}/include)
 
-![image-20250715150543720](C:\Users\jkx-pig\AppData\Roaming\Typora\typora-user-images\image-20250715150543720.png)
+![image-20250715150543720](assets/image-20250715150543720.png)
 
 ```cmake
  project(test)
@@ -9812,7 +9812,41 @@ Systick中断的优先级也可以设置。
 
 
 
-#### 2. 函数和寄存器
+### 3.中断优先级管理
+
+CM3内核支持256个中断，其中包含了16个内核中断和 240个外部中断，并且具有256级的可编程中断设置。
+STM32并没有使用CM3内核的全部东西，而是只用了它的一部分。
+
+
+
+STM32有84个中断，包括16个内核中断和68个可屏蔽中断，具有16级可编程的中断优先级。
+
+STM32F103系列上面，又只有60个可屏蔽中断（在107系列才有68个）
+
+
+
+
+
+
+
+
+#### 1.中断优先级分组
+
+首先对STM32终端进行分组，0~4.同时，对每个中盾设置一个抢占优先级一个响应优先级。
+
+分组配置是在寄存器SCR->AIRCR种
+
+
+
+
+
+#### 2.中断优先级设置
+
+
+
+
+
+
 
 
 
