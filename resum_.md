@@ -4896,11 +4896,201 @@ cv.wait(lk, []{ return predicate(); });
 
 ### 65、什么情况下会出现死锁
 
+死锁的条件：
+
+**死锁的四个必要条件**
+
+- **互斥使用**：资源一次只能由一个线程持有；
+- **占有且等待**：线程至少占有一个资源，并等待其他线程持有的资源；
+- **不可剥夺**：线程已获得的资源在未使用完毕前不能被强制剥夺；
+- **环路等待**：存在线程集合，每个线程都在等待下一个线程持有的资源，形成环形依赖。
+
+只要同时满足以上四个条件，就会产生死锁。
+
+**避免死锁的策略**
+
+- **统一加锁顺序**：对所有线程规定相同的资源获取顺序，破坏环路等待条件；
+- **尝试锁 (try_lock)**：使用非阻塞的try_lock，在失败时释放已持有的锁并重试，避免长时间等待；
+- **超时机制**：使用带超时的锁（如std::timed_mutex），在超时后放弃获取并回退操作；
+- **锁层级与抢占**：对资源分配层级编号，只能按从低到高的顺序加锁；高层次锁可抢占低层锁；
+- **一次性获取多把锁**：使用std::lock(m1, m2)在原子阶段同时获取多把锁，不会产生环路；
+- **最小锁持有时间**：缩短临界区、及时释放锁，减少竞争窗口。
+
+通过以上方法，可以破坏死锁的必要条件，或在检测到潜在死锁时自动回退，从而保证系统的可用性。
 
 
 
+### 66、实现线程池
 
 
+
+```c
+
+#include <iostream>
+#include <thread>  
+#include <functional>  //函数模板  bind
+#include <vector>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <memory>  //unique_ptr shared_ptr
+#include <chrono>  //时间   
+using namespace std;
+//手撕线程池   
+/*
+生产者消费者模型    
+线程池有多个创建的线程  等待任务队列里有任务就去执行，这个有谁执行是不确定的 
+生产者负责向任务队列里添加任务，消费者负责从任务队列里取任务执行
+
+
+线程池是全局唯一一个unique_ptr    只初始化一次once_call();，后续调用仍然还是同一个线程池 ，所以需要用单例模式  
+*/
+
+
+class ThreadPool { 
+public:
+    //首先  创建单例模式  （在单例模式中创建线程池 保障只初始化一次  返回创建的线程池对象指针）
+    // 获取线程池单例对象（懒汉式单例，线程安全）
+    static ThreadPool& getInstance(size_t number_thread=4)  //static保证外部main可以调用
+    {
+        static once_flag flag;  //once_flag是一个标志位，表示是否已经执行过某个操作
+        static unique_ptr<ThreadPool> instance;  //创建一个空的  使用unique_ptr管理ThreadPool的生命周期
+
+        call_once(flag,[number_thread](){
+            instance.reset(new ThreadPool(number_thread));  //创建线程池实例 释放当前对象并管理新的对象
+
+        });
+        return *instance;  //返回线程池实例的引用
+    }
+
+    //禁用拷贝构造
+    ThreadPool(const ThreadPool& )=delete;
+    //禁用赋值构造
+    ThreadPool& operator=(const ThreadPool& )=delete;
+
+
+    
+    //析构函数
+    ~ThreadPool()
+    {
+        {
+            unique_lock<mutex> lock(m_mutex);
+            stop = true;  //设置停止标志
+        }
+
+        cond.notify_all();  //通知所有等待的线程，线程池即将停止
+        for(auto &t: threads)  //遍历线程池中的所有线程
+        {
+            if(t.joinable())  //如果线程可连接
+            {
+                t.join();  //等待线程结束
+            }
+        }
+        cout << "ThreadPool destroyed" << endl;  //输出线程池销毁信息
+    }
+
+    //添加任务队列函数
+    template<class T, class ...Args>
+    void addtask(T&&task,Args&&...args)
+    {
+        function<void()> func=bind(forward<T>(task),forward<Args>(args)...);  //使用bind将任务和参数绑定到一个函数对象上
+        {
+            //加锁区   要修改等待队列了
+            unique_lock<mutex> lock(m_mutex);  //使用unique_lock来管理互斥锁的生命周期
+            tasks.emplace(move(func));  //将函数对象添加到任务队列中
+
+        }
+        cond.notify_one();  //通知一个等待的线程，任务队列中有新任务
+    }
+    private:
+
+    
+    //默认构造函数  explicit 的作用是防止构造函数或转换函数被隐式调用，从而避免意外的隐式类型转换。
+    /*
+        Test t1(10);  // 正确：显式调用构造函数
+       Test t2 = 10;  // 错误：隐式调用被禁止，因为构造函数是 explicit
+
+    */
+    explicit ThreadPool(size_t number_thread): stop(false) //在线程池里面创建线程 几个线程
+    {
+        for(int i=0;i<number_thread;i++)
+        {
+            threads.emplace_back([this](){
+                while(1)
+                {
+                    //获取锁 
+                    unique_lock<std::mutex> lock(m_mutex);  //使用unique_lock来管理互斥锁的生命周期
+                    cond.wait(lock,[this](){
+                        return !tasks.empty() || stop;  //等待条件变量，直到任务队列不为空或线程池停止
+                    });
+                    if(stop && tasks.empty())  //如果线程池停止且任务队列为空，退出线程
+                    {
+                        return;
+                    }
+                    //从任务队列中取出任务
+                    function<void()>  task(move(tasks.front()));  //这里创建了一个新的 std::function<void()> 对象 task，并将 tasks.front() 的内容移动到它中。
+                    tasks.pop();
+                    lock.unlock();  //解锁互斥锁，允许其他线程访问任务队列
+                    //执行任务
+                    task();  //执行任务函数对象
+                 
+                }
+
+
+
+            });
+        }
+
+    }
+
+
+    mutex m_mutex;  //互斥锁
+    condition_variable cond;  //条件变量
+    queue<function<void()>> tasks;  //任务队列，存储函数对象
+    vector<thread> threads;  //线程池，存储工作线程
+    bool stop;  //标志线程池是否停止
+};
+
+// 示例任务函数
+void func(int id) {
+    std::cout << "任务 " << id << " 开始执行，线程ID: " 
+              << std::this_thread::get_id() << std::endl;
+
+    std::this_thread::sleep_for(std::chrono::seconds(1)); // 模拟耗时任务
+
+    std::cout << "任务 " << id << " 完成" << std::endl;
+}
+
+int main() {
+
+    ThreadPool &pool=ThreadPool::getInstance(5);//获取线程池单例对象  只有首次会被构建
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    for(int i=10;i>0;i--)
+    {
+        pool.addtask(func,i);  //添加任务到线程池
+        std::cout << "已添加任务 " << i << std::endl;
+    }
+
+      // 主线程等待部分任务完成（实际情况应使用同步机制）
+    std::cout << "主线程等待任务完成..." << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+
+  // 再次获取相同的线程池实例（证明单例有效）
+    ThreadPool& samePool = ThreadPool::getInstance();
+
+    samePool.addtask([](){
+        std::cout << "再次添加任务" << std::endl;
+    });
+
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    std::cout << "程序结束" << std::endl;
+
+
+    return 0;
+}
+
+
+```
 
 
 
