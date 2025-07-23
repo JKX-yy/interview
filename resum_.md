@@ -4350,9 +4350,76 @@ this:用于非静态成员函数内部，指向调用该函数的对象本身，
   - 实现数据结构（链表、树、图等）时需要灵活分配节点。
   - 在需要动态扩展、可调整大小的数据容器（如std::vector）内部也使用堆分配。
 
+### 47、C++中"myecpy","memmove" "strcpty"有什么区别
+
+memcpy可以实现任意数据库类型的cp安字节长度   会不会产生副本
+
+strcpy是针对char*类型的cp   是否以\0结尾  必须定义》=的数据长度
 
 
 
+**功能与用法差异**
+
+- memcpy(void* dest, const void* src, size_t n)
+
+  - 将src地址开始的**连续 n 个字节**拷贝到dest。
+  - 仅按字节复制，不会检查内容，也不会自动添加终止符。
+  - **前提**：src和dest所指内存区域**不能**重叠，否则结果未定义。
+
+  ```c
+   // memcpy 示例：复制固定长度的二进制数据
+      char src1[] = "Hello, World!";
+      char dest1[20];
+      std::memcpy(dest1, src1, std::strlen(src1) + 1);  // 加1 以包含 '\0'
+      std::cout << "memcpy dest1 = " << dest1 << std::endl;
+  ```
+
+  
+
+- memmove(void* dest, const void* src, size_t n)
+
+  - 也将src地址开始的
+
+    连续 n 个字节
+
+    拷贝到dest，但在拷贝前会检测内存区域是否重叠：
+
+    - 若dest < src，从前向后逐字节拷贝；
+    - 若dest > src，从后向前逐字节拷贝，避免覆盖待拷贝数据。
+
+  - 因此可以安全处理**重叠**区域拷贝，但在小块数据拷贝场景下速度略低于memcpy。
+
+  ```c
+  // memmove 示例：重叠区域复制
+      char buffer[] = "1234567890";
+      std::cout << "原 buffer = " << buffer << std::endl;
+      std::memmove(buffer + 3, buffer, 5);  // 将前 5 个字符 "12345" 移动到索引 3 开始
+      std::cout << "memmove buffer = " << buffer << std::endl;
+  
+  
+  原 buffer = 1234567890
+  memmove buffer = 1231234590
+  ```
+
+  
+
+- strcpy(char* dest, const char* src)
+
+  - 复制src指向的 C 风格字符串，**从首字符开始复制直至遇到'\0'**，并将终止符也复制到dest。
+  - 要求dest有足够空间容纳整个字符串及终止符，否则会导致**缓冲区溢出**。
+  - 只适用于复制以'\0'结尾的字符串，不适用于复制二进制数据或包含'\0'的内存块。
+
+```c
+ // strcpy 示例：复制 C 字符串 (危险示例，需保证目标足够大)
+    const char* src2 = "Example";
+    char dest2[10];
+    std::strcpy(dest2, src2);  // 自动复制直到 '\0'
+    std::cout << "strcpy dest2 = " << dest2 << std::endl;
+ 
+    // strcpy 溢出示例（此行仅做说明，实际运行会导致未定义行为）
+    // char small[4];
+    // std::strcpy(small, "Overflow"); // 错误：目标缓冲区太小，拷贝会越界
+```
 
 
 
