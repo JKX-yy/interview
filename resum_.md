@@ -12745,6 +12745,39 @@ mainWin->show();
 
 
 
+## 3.QT项目梳理
+
+
+
+熟系QT（理解信号槽机制，会用Network/Thread/Json等模块）
+
+![image-20250726152812731](assets/image-20250726152812731.png)
+
+- 基于智能交互的机器人综合抓取平台
+- *-*国家自然科学基金（核心成员）
+- 2024-06 *~* 至今
+
+**描述：**本项目基于 ROS+QT+LLM 开发一套智能机器人仿真平台，实现自然语言文本→LLM任务规划→机器人动作执行的闭环控制。
+
+**技术栈：ROS1（C++/CMake/Python）、QT（Network/Json/Thread）、Dify（Docker）、LLM、Gazebo**
+
+- 构建QT可视化界面，集成任务规划、仿真动态与状态监控，支持 LLM 输出与机器人联动，提升任务执行的智能性和自动化水平；
+- 基于Dify+LLM 实现语义解析引擎，支持非结构化语言指令转机械臂动作序列，提高复杂指令处理能力，解析准确率达到 **91.3%**;
+- 开发语言控制中间件（动作序列到 ROS 指令的映射/分发/状态反馈）、开发自动执行/异常处理机制，提升平台模块化与复用性；
+
+### 项目介绍
+
+```
+第一个项目是基于智能交互的机器人综合抓取平台，基于QT构建一个人机交互界面，
+功能1：该界面具备普通机械臂的上位机设置目标点功能，并在ros,gazebo仿真中实现运动轨迹规划（moveit），还可以实现单关节的滑杆控制功能。
+功能2：机械臂状态监控功能、LLM的任务规划结果、任务执行的状态等信息。
+
+功能3：此外本项目基于Dify构建了一个语义解析引擎，旨在实现文本组装指令到机器人细粒度动作序列的生成，我们构建了一个多级工作流模式，包含指令输入模块-》LLM的关键词提取模块（提取文本指令的关键词，以便处理模糊语义）提取关键词-》知识库检索（自己构建的1万条常用的工业组装数据集包括任务指令->细粒度规划）模块检索相关的源知识-》基于LLM的细粒度任务规划模块（结合指令，源知识进行最终的细粒度规划）-》输出。
+功能4：中间件将文本级细粒度任务规划进行ROS指令映射，
+
+
+旨在实现
+```
 
 
 
@@ -12752,40 +12785,482 @@ mainWin->show();
 
 
 
+### 函数解析
+
+主循环
+
+```py
+#全局任务队列
+task_queue=[]
+
+args.qt:
+	rate=rospy.Rate(10)
+	while  not rospy.is_shutdown():
+		if task_queue: //任务队列非空
+			rospy.loginfo("Task queue is not empty : %d", len(task_queue))
+            tutorial.qt_go_to_pose_goal() //go to 位置 一次只执行【】队列第一个子任务，执行完pop(0)弹出，然后睡眠两秒return，执行下一个子动作
+		rate.sleep()
+```
 
 
 
 
 
+任务队列  收和解析
+
+```py
+首先订阅： 
+#新增指令订阅    /qt/task_queue由上位机QT端进行创建和发布话题  Taskstring就是一个字符串类型
+     rospy.Subscriber("/qt/task_queue",Taskstring, self.task_queue_callback)
+    
+//当QT端往话题中发送了消息 调用回调函数 进行解析，用append添加到task_queue[]中
+
+def task_queue_callback(self, msg):
+        global task_queue
+        try:
+            raw_text = msg.task_queue.strip()
+            if not raw_text:
+                return
+
+            # 移除AI时间戳
+            if raw_text.startswith("AI ["):
+                raw_text = '\n'.join(raw_text.split('\n')[1:]).strip()
+
+            task_queue.clear()
+            task_pattern = r'(?P<index>\d+)\.\s+(?P<description>.+?):\s+(?P<command>\w+)'
+
+            for task in re.finditer(task_pattern, raw_text):  # 1： 2： 3： 4：
+                try:
+                    desc = task.group('description').strip()
+                    # 正确调用类方法
+                    source, target = self.extract_source_target(desc)
+                  //重要代码  
+                    task_queue.append({
+                        'index': int(task.group('index')),
+                        'description': desc,
+                        'command': task.group('command'),
+                        'source': source,
+                        'target': target
+                    })
+
+                except Exception as e:
+                    rospy.logwarn(f"任务解析失败: {task.group()} | 错误: {str(e)}")
+                # 处理完成后打印队列
+            self.print_task_queue(task_queue)
+        except Exception as e:
+            rospy.logerr(f"处理异常: {str(e)}")
+        
+
+
+```
+
+任务队列添加完，得到每个子任务的  index,description,,command,source（操作物品）,target（目标位置）-》调用 qt_go_to_pose_goal()  
+
+每执行完一个子任务都要pop弹出  
+
+```py
+def qt_go_to_pose_goal(self):
+        self.qt_ur3_85_control_callback()//中间件
+        """移动到目标位置并控制夹爪"""
+        if not self.new_command_received:   #这里是按task_queue的内容依次执行动作zhi
+
+            return False
+        move_group=self.move_group
+        target_pose=self.target_pose
+        print("末端执行器目标坐标先打印出来看看：",target_pose)
+        move_group.set_pose_target(target_pose)
+
+        success = move_group.go(wait=True)
+        if not success:
+            rospy.logerr("运动规划失败")
+            self.is_moving = False  # 释放锁
+            return False
+            
+        move_group.stop()
+        move_group.clear_pose_targets()
+        
+        # 控制夹爪
+        
+        self.control_gripper(self.gripper_angle)
+
+        if task_queue:
+            task_queue.pop(0)  
+        else:
+            print("没有任务可执行")
+        self.is_moving = False  # 释放锁
+        self.new_command_received = False
+            # 添加 2 秒停顿
+        rospy.sleep(2.0)  # 任务间停顿 2 秒
+        current_pose = self.move_group.get_current_pose().pose
+        return all_close(target_pose, current_pose, 0.01)
+```
+
+
+
+🧠中间件函数：如何实现  开发语言控制中间件（动作序列到 ROS 指令的映射/分发/状态反馈）、开发自动执行/异常处理机制，提升平台模块化与复用性；
+
+
+
+🧠这里的映射（可以是switch语句进行匹配 if target == 'cube1':      target_pose_base = *self*.cube1_pos_base   ）     
+
+🧠分发（  考虑执行的本体是机械臂移动还是单个夹爪的开关；在 移动时夹爪保持上一次状态，目标是夹爪关时设置开关角度）
+
+🧠自动执行：就是task_queue[] 任务队列非空 就 一次执行队列里的子任务吗，经过中间件分配，然后pop();
+
+🧠异常处理：当规划过程发生碰撞时结束本次任务。
+
+
+
+（这个函数每次都取出任务队列中的第一个任务 解析（源   和目标 的位姿）  *#计算末端执行器在base_link中的目标位置
+
+```py
+# self.qt_ur3_85_control_callback()//中间件  
+# 
+
+ def qt_ur3_85_control_callback(self):
+        if self.is_moving:
+            return  # 如果正在运动，忽略新指令
+        self.is_moving=True
+
+        #从task_queue中获取任务中的 target  source
+        if task_queue:
+            source=task_queue[0].get('source','N/A')
+            target=task_queue[0].get('target','N/A')
+        else :
+            return
+
+        #计算所有物品在base_link中的坐标   设置目标位置
+        self.tf_object_to_base_link()
+        
+        if target == 'cube1':
+            target_pose_base = self.cube1_pos_base
+        elif target == 'cube2':
+            target_pose_base = self.cube2_pos_base
+        elif target == 'cube3':
+            target_pose_base = self.cube3_pos_base
+        elif target == 'factory_nut_m16_loose':
+            target_pose_base = self.nut16_pos_base   #这个夹爪的角度和直径有关  间隙也得重新设置其实可以让difyshengcehng 根据输入给出gap和夹爪甲角度值
+        elif target=='close':
+            self.gripper_angle = 0.475  # close夹爪
+            self.new_command_received = True
+            return 
+        elif target=='open':
+            self.gripper_angle = 0.0  # open夹爪
+            self.new_command_received = True
+            return
+        else:
+            raise ValueError(f"Unknown source: {source}")
+        
+        #source 的执行者如果是gripper  那就设置base_link_world
+        if source == 'gripper':
+            source_pose_base = self.move_group.get_current_pose().pose  # gripper在baselink中的坐标
+            gap=0.18
+        elif source=='cube1':
+            source_pose_base = self.cube1_pos_base
+            gap=0.25
+        elif source=='cube2':
+            source_pose_base = self.cube2_pos_base
+            gap=0.25
+        else:
+            source_pose_base = self.cube3_pos_base
+            gap=0.25
+
+        
+        try:
+            rospy.loginfo("target %s pos in base: %s",target, target_pose_base)
+            rospy.loginfo("source %s pose in base: %s",source, source_pose_base)
+
+
+            target_to_point = Pose()
+            target_to_point.position.x = target_pose_base[0]
+            target_to_point.position.y = target_pose_base[1]
+            target_to_point.position.z = target_pose_base[2]+gap #再加0.2
+            # target_to_point.orientation.x = q_cube_base[0]
+            # target_to_point.orientation.y = q_cube_base[1]
+            # target_to_point.orientation.z = q_cube_base[2]
+            # target_to_point.orientation.w = q_cube_base[3]
+
+            # 设定固定朝下的姿态（RPY: 滚转=π, 俯仰=0, 偏航=0）
+            roll = np.pi  # 180度翻滚，使夹爪朝下
+            pitch = 0.0   # 无俯仰
+            yaw = 0.0     # 无偏航
+
+            # 转换为四元数
+            q_down = tf.transformations.quaternion_from_euler(roll, pitch, yaw)
+
+            # 应用竖直向下的姿态
+            target_to_point.orientation.x = q_down[0]
+            target_to_point.orientation.y = q_down[1]
+            target_to_point.orientation.z = q_down[2]
+            target_to_point.orientation.w = q_down[3]
+
+
+            rospy.loginfo("Calculated cube pose in base_link:\nPosition: %s\nOrientation: %s",
+                        target_to_point.position, target_to_point.orientation)
+                    # 更新目标位姿
+            self.target_pose = target_to_point
+            self.new_command_received = True
+
+        except Exception as e:
+            rospy.logerr("坐标变换计算失败: %s", e)
+            self.is_moving = False
+```
+
+ 
+
+
+
+坐标变换：由于末端执行器的set_pose_target函数设置的目标点是base_link标系中的点，所以所有物品都的世界坐标系下的坐标得转化到base_link坐标系。
+
+```py
+        target_pose=self.target_pose
+        print("末端执行器目标坐标先打印出来看看：",target_pose)
+        move_group.set_pose_target(target_pose)
+```
+
+
+
+#### 1.创建工作空间
+
+```py
+1.整个项目的工作空间：
+	src:代码空间   //功能包源码
+	build:编译空间       //中间文件
+	devel:开发空间     //开发中的可执行文件和库
+	install ：安装空间  如下  //放置最终编译完成的可执行文件
+
+catkin_make install
+```
+
+![image-20250726163641207](assets/image-20250726163641207.png)
+
+
+
+![image-20250726163148943](assets/image-20250726163148943.png)
+
+
+
+#### 2.自定义数据类型
+
+//自定义的 各种数据类型包括
+
+![image-20250726164213988](assets/image-20250726164213988.png)
+
+```c
+// Armmsg.msg   6自由度信息
+float32 shoulder_pan
+float32 shoulder_lift
+float32 elbow
+float32 wrist_1
+float32 wrist_2
+float32 wrist_3
+//fInger.msg    
+float32 effector_position_desired
+float32 effector_position_actual  //一般只用这个
+//Objectmsg.msg
+float32 object1_x
+float32 object1_y
+float32 object1_z
+float32 object1_orientation_x
+float32 object1_orientation_y
+float32 object1_orientation_z
+float32 object1_orientation_w
+float32 object2_x
+float32 object2_y
+float32 object2_z
+float32 object2_orientation_x
+float32 object2_orientation_y
+float32 object2_orientation_z
+float32 object2_orientation_w
+float32 object3_x
+float32 object3_y
+float32 object3_z
+float32 object3_orientation_x
+float32 object3_orientation_y
+float32 object3_orientation_z
+float32 object3_orientation_w   
+    
+//Taskstring.msg  LLM规划的消息
+string  task_queue
+    
+```
+
+在CmakeList.txt中修改
+
+```py
+## Generate added messages and services with any dependencies listed here
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  rospy
+  std_msgs
+  message_generation //自定义数据类型
+  sensor_msgs
+  control_msgs
+)
+add_message_files(
+  FILES
+  Armmsg.msg
+  Finger.msg
+  Objectmsg.msg
+  Taskstring.msg
+)
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+)
+catkin_package(
+#  INCLUDE_DIRS include
+#  LIBRARIES my_qtpkg
+ CATKIN_DEPENDS roscpp rospy std_msgs  message_runtime//自定义一定要添加   gazebo_msgs  control_msgs
+#  DEPENDS system_lib
+)
+```
+
+在package.xml中修改
+
+```c
+
+  <!--添加自定义的msg类型-->
+  <build_depend>message_generation</build_depend>
+  <exec_depend>message_runtime</exec_depend>
+```
+
+在QT中使用时  要先在main中注册原类型
+
+```cpp
+
+#include "my_qtpkg/Armmsg.h"  // 确保包含消息头文件
+#include "my_qtpkg/Taskstring.h"
+
+int main(int argc, char* argv[])
+{
+    QApplication a(argc, argv);
+    // ✅ 正确调用方式（直接调用，不需要 template<>）
+    qRegisterMetaType<my_qtpkg::Armmsg>("my_qtpkg::Armmsg");
+    qRegisterMetaType<my_qtpkg::Finger>("my_qtpkg::Finger");
+    qRegisterMetaType<my_qtpkg::Objectmsg>("my_qtpkg::Objectmsg");
+    qRegisterMetaType<my_qtpkg::Taskstring>("my_qtpkg::Taskstring");
+    mainsence my;
+    my.show();
+    return QApplication::exec();
+}
+```
+
+```cpp
+#include <my_qtpkg/Taskstring.h>
+#include <my_qtpkg/Objectmsg.h>
+//在QThread中
+    //发送
+ ros::NodeHandle nh_send;
+    arm_pub_=nh_send.advertise<my_qtpkg::Armmsg>("/qt_arm_control_topic",100);
+    gripper_pub_=nh_send.advertise<my_qtpkg::Finger>("/qt_gripper_control_topic",100);
+    taskqueue_pub_=nh_send.advertise<my_qtpkg::Taskstring>("/qt/task_queue",100);
+    //接收
+    ros::NodeHandle nh_arm;
+    ros::Subscriber sub_arm = nh_arm.subscribe("/arm_join_states", 1,
+                                     &RosThread::armStateCallback, this);
+
+    ros::NodeHandle nh_finger;
+    ros::Subscriber sub_finger = nh_finger.subscribe("/finger_join_states", 1,
+                                     &RosThread::fingerStateCallback, this);
+    ros::NodeHandle ng_object;
+    ros::Subscriber sub_object = ng_object.subscribe("/object_states", 1,&RosThread::objectStateCallback,this);
+
+
+```
+
+
+
+####  3.创建功能包
+
+```c
+catkin_create_pkg  my_qtpkg   roscpp rospy std_msgs  message_runtime   gazebo_msgs  control_msgs
+```
+
+![image-20250726164015983](assets/image-20250726164015983.png)
 
 
 
 
 
+![image-20250726162749144](assets/image-20250726162749144.png)
+
+package.xml  功能包的信息  依赖信息
 
 
 
 
 
+#### 4.创建或者订阅话题 给QT发送消息 或者 获取控制指令
 
 
 
 
 
+![image-20250726180050984](assets/image-20250726180050984.png)
 
 
 
+finger_state_publisher.cpp ，创建 一个话题/finger_join_states 供QT界面显示夹爪信息。        这个信息其实也是来自默认的订阅/gripper_controller/state
+
+```cpp
+
+/*自定义一个类型*/
+class FingerStatePublisher
+{ 
+    public:
+    FingerStatePublisher() //订阅gazebo发布的关节然后发布关节发布关节给qt
+    {
+       nh=ros::NodeHandle("~");
+       //订阅
+       finger_state_sub_=nh.subscribe("/gripper_controller/state",10,&FingerStatePublisher::fingerStateCallback,this);
+        //发布给qt
+        qt_pub_=nh.advertise<my_qtpkg::Finger>("/finger_join_states",10);
+        // ROS_INFO("FingerStatePublisher ready");
+    }
+
+    void fingerStateCallback(const control_msgs::JointTrajectoryControllerState::ConstPtr& msg)
+    {
+        // ROS_INFO("Received finger_states with  fingers");
+         my_qtpkg::Finger finger_msg;
+        // 提取UR机械臂的6个主要关节信息
+        finger_msg.effector_position_desired = msg->desired.positions[0];
+        finger_msg.effector_position_actual = msg->actual.positions[0];
+
+        qt_pub_.publish(finger_msg);
+    }
 
 
 
+    private:
+    ros::NodeHandle nh;
+    ros::Subscriber finger_state_sub_;  //订阅/gazebo/model_states发布的消息
+    ros::Publisher qt_pub_;
 
 
+};
 
 
-
-
-
-
+int main(int argc, char **argv)
+{
+    // 初始化ROS
+    ros::init(argc,argv, "toqt_finger_state_publisher");
+    /*
+    作用：初始化 ROS 节点，必须调用。
+参数说明：
+argc, argv：传入命令行参数。
+"toqt_finger_state_publisher"：本节点的名称，必须是唯一的（除非使用匿名命名）。
+作用结果：注册当前程序为 ROS 网络中的一个节点（Node），并与 ROS Master 建立联系。
+    */
+    FingerStatePublisher join_to_qt_publisher;
+    ros::spin();
+    /*
+    作用：进入 ROS 事件循环，保持节点活着，并调用回调函数。
+原理：它会不断轮询是否有消息到达（比如订阅消息、服务请求等），一旦有就调用你在定义订阅器或服务时绑定的回调函数。
+    */
+    return 0;
+}
+```
 
 
 
