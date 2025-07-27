@@ -5268,7 +5268,7 @@ https://blog.csdn.net/weixin_50591371/article/details/141286333
 
 ### 什么情况用到volatial
 
-1）并行设备的硬件寄存器（如状态寄存器） ？（不理解）
+1）并行设备的硬件寄存器（如状态寄存器） ？
 
  在嵌入式系统中，**硬件寄存器**（如状态寄存器、数据寄存器等）是CPU与外部设备（如GPIO、UART、ADC等）交互的桥梁。这些寄存器的值可能随时**被硬件自动修改**（例如：串口接收到数据时状态寄存器会变化），而编译器无法通过静态分析预知这种变化。因此，必须用 `volatile` 修饰对这些寄存器的访问，否则编译器优化会导致程序行为异常。
 
@@ -5320,7 +5320,6 @@ int square(volatile int* ptr)
 {
     return *ptr * *ptr;    
 }
-
 ```
 
 ```c
@@ -5451,9 +5450,35 @@ int* p4;
 ## 7.找出下面中断处理程序（ISR）的错误
 
 ```c
+fifo [1024];
+void send(char *buf, size_t len)
+{
+  irq_disable();
+   fifo.push(0XAA);
+   fifo + = 0x55;
+    
+   fifo + = len;
+    memcpy(&fifo  buf, len);
+    fifo + = crc;
+    fifo + = 0xA5;
+    
+  irq_enable();
+    cv.call_once();
+}
+
+thread_entry()
+{
+    
+    cv.wait(lock, []{
+        return !fifo.empty();
+    })
+        write(fd, fifo.pop(), len + 5);
+}
+
+
 __interrupt double compute_area(double radius)
 {
-    double area PI * radius * radius;
+    SITATC double area PI * radius * radius;
     printf("Area = %f\n", area);
     return area;
 }
@@ -12785,7 +12810,7 @@ mainWin->show();
 
 
 
-### 函数解析
+### 1、 ros gazebo 端 函数解析
 
 主循环
 
@@ -13203,6 +13228,8 @@ package.xml  功能包的信息  依赖信息
 
 finger_state_publisher.cpp ，创建 一个话题/finger_join_states 供QT界面显示夹爪信息。        这个信息其实也是来自默认的订阅/gripper_controller/state
 
+**************************************   在代码中像QT界面发送夹持器的状态，（首先获取/gripper_contrliier/state     然后发布给/finger_join_states(自定义)    ）**********************
+
 ```cpp
 
 /*自定义一个类型*/
@@ -13268,6 +13295,755 @@ argc, argv：传入命令行参数。
 
 
 
+获取远端QT的机械臂六自由度信息，r 然后发布给自带的机械臂控制服务/scaled_pos_joint_traj_controller/command，类型trajectory_msgs，设置.name  .position
+
+```py
+#include <ros/ros.h>
+#include <my_qtpkg/Armmsg.h> //机械臂关节信息  
+// #include <control_msgs/JointTrajectoryControllerState.h>
+#include <trajectory_msgs/JointTrajectory.h>
+/*自定义一个类型*/
+class JointStateSubscriber
+{ 
+    public:
+    JointStateSubscriber() //订阅gazebo发布的关节然后发布关节发布关节给qt
+    {
+       nh=ros::NodeHandle("~");
+       //订阅来自Qt的控制指令（自定义消息类型）
+       joint_state_sub_=nh.subscribe("/qt_arm_control_topic",10,&JointStateSubscriber::fingerStateCallback,this);
+        //发布标准控制消息到控制器
+        qt_pub_=nh.advertise<trajectory_msgs::JointTrajectory>("/scaled_pos_joint_traj_controller/command",10);
+        ROS_INFO("JointStateSubscriber ready");
+    }
+
+    void fingerStateCallback(const my_qtpkg::Armmsg::ConstPtr& msg)
+    {
+            ROS_INFO_STREAM("Received arm joint command: " 
+                   << "shoulder_pan=" << msg->shoulder_pan
+                   << ", shoulder_lift=" << msg->shoulder_lift
+                   << ", elbow=" << msg->elbow
+                   << ", wrist_1=" << msg->wrist_1
+                   << ", wrist_2=" << msg->wrist_2
+                   << ", wrist_3=" << msg->wrist_3);
+            trajectory_msgs::JointTrajectory traj_msg;
+            
+            // 设置关节名称（必须与URDF中定义的完全一致）
+            traj_msg.joint_names = {
+                "shoulder_pan_joint",
+                "shoulder_lift_joint",
+                "elbow_joint",
+                "wrist_1_joint",
+                "wrist_2_joint",
+                "wrist_3_joint"
+            };
+
+            // 创建轨迹点
+            trajectory_msgs::JointTrajectoryPoint point;
+            point.positions = {
+                msg->shoulder_pan,
+                msg->shoulder_lift,
+                msg->elbow,
+                msg->wrist_1,
+                msg->wrist_2,
+                msg->wrist_3
+            };
+            
+            // 设置时间戳（当前时间+0.1秒到达目标位置）
+            point.time_from_start = ros::Duration(0.1);
+            
+            // 添加轨迹点
+            traj_msg.points.push_back(point);
+            
+            // 设置消息头时间戳
+            traj_msg.header.stamp = ros::Time::now();
+            
+            // 发布消息
+            qt_pub_.publish(traj_msg);
+
+    }
+
+
+
+    private:
+    ros::NodeHandle nh;
+    ros::Subscriber joint_state_sub_;  //订阅/gazebo/model_states发布的消息
+    ros::Publisher qt_pub_;
+
+
+};
+
+
+int main(int argc, char **argv)
+{
+    // 初始化ROS
+    ros::init(argc,argv, "toqt_gripper_state_subcriber");
+    JointStateSubscriber join_to_qt_publisher;
+    ros::spin();
+    return 0;
+}
+
+
+```
+
+
+
+### 2、QT端函数
+
+#### 1、main函数
+
+注册自定义消息类（用于 gazebo和 QT通信）
+
+创建mainsence 对象
+
+```cpp
+#include <QMetaType>
+int main(int argc, char* argv[])
+{
+    QApplication a(argc, argv);
+    // ✅ 正确调用方式（直接调用，不需要 template<>）
+    qRegisterMetaType<my_qtpkg::Armmsg>("my_qtpkg::Armmsg");
+    qRegisterMetaType<my_qtpkg::Finger>("my_qtpkg::Finger");
+    qRegisterMetaType<my_qtpkg::Objectmsg>("my_qtpkg::Objectmsg");
+    qRegisterMetaType<my_qtpkg::Taskstring>("my_qtpkg::Taskstring");
+    mainsence my;
+    my.show();
+    return QApplication::exec();
+}
+```
+
+调用show做了几点事情：
+
+调用 `.show()` 做了以下几件事：
+
+1. **设置 widget 可见**：
+   - 调用后会将 `QWidget` 对象的 `visible` 属性设置为 `true`。
+2. **通知窗口系统创建实际窗口**：
+   - 对于顶层窗口（如 `QMainWindow`），这会导致 Qt 向底层 OS（如 Windows、X11）申请一个窗口句柄。
+3. **触发绘制事件**：
+   - 系统会触发 `paintEvent()`，从而把 widget 的内容画出来。
+4. **进入事件队列中，等待用户交互**：
+   - 一旦显示后，用户就可以点击、拖拽、输入，Qt 会通过事件系统进行响应。
+
+
+
+QApplication::exec()  进入事件循环；
+
+
+
+.show()是把窗口显示出来；
+
+.exec()是启动QT事件循环，处理消息响应（鼠标、键盘等）
+
+#### 2、mainsence类  主场景
+
+mainsence  是继承了QWidget类:重写了 `paintEvent()` 实现自定义绘图（例如绘制窗口背景），另外还声明了几个自定义按钮和页面切换成员。
+
+```cpp
+QT_BEGIN_NAMESPACE
+namespace Ui { class mainsence; }
+QT_END_NAMESPACE
+
+class mainsence : public QWidget {
+Q_OBJECT
+
+public:
+    explicit mainsence(QWidget *parent = nullptr);
+    ~mainsence() override;
+    //绘图事件  画背景
+    void paintEvent(QPaintEvent* event) override;
+    mypushbutton *menustartbtn=NULL;
+    chosselevelscene *chosescene=NULL;
+
+private:
+    Ui::mainsence *ui;
+};
+
+
+```
+
+
+
+
+
+1. paintEvent函数 主场景的画背景：
+
+   ```cpp
+    void mainsence:: paintEvent(QPaintEvent* event)
+   {
+       /*
+       //绘图的设备
+       QPainter painter(this);
+   
+   
+       //设置画笔
+       QPen pen(QColor(255,0,0));
+   
+       pen.setWidth(2);
+       pen.setStyle(Qt::SolidLine);
+   
+       painter.setPen(pen);
+       //画刷子填充
+       QBrush brush(QColor(255,0,0));
+       //画刷风格
+       brush.setStyle(Qt::Dense4Pattern);
+       painter.setBrush(brush);
+   
+       //画线
+       painter.drawLine( QPoint(0,0),QPoint(100,100));
+       //画院
+       painter.drawEllipse(QPoint(50,50),50,50);
+       //画矩形
+       //话文字
+       painter.drawText(QPoint(50,50),"好好学习");
+   
+       //gaojishezhi 高级设置
+   
+   
+       //利用画家花图片  update更新   QTimer可以动态
+   
+       QPainter painter2(this);
+       painter2.drawPixmap(200,100,QPixmap("/home/jkx/CLionProjects/day02_addsource/Image/1.jpeg"));
+   
+       //绘图和绘图设备
+   
+   */
+   
+       QPainter painter(this);//创建一个 QPainter 对象，目标是当前窗口（this）
+       QPixmap pix;//声明一个 QPixmap 对象，它是用于加载和绘制图片的类，专为屏幕优化。
+       pix.load("/home/jkx/CLionProjects/armros/res/background.jpg"); //加载背景图像文件。
+       painter.drawPixmap(0,0,this->width(),this->height(),pix);//将图片绘制到窗口上，从坐标 (0, 0) 开始，占满整个窗口（this->width() 和 this->height()）。
+   
+   
+   }
+   
+   ```
+
+2. mainsence构造函数 (设置初始画布大小 创建开始按钮，创建chose选择场景类，按下隐藏初始界面   ，按钮跳转选择界面)
+
+```cpp
+mainsence::mainsence(QWidget *parent) :
+    QWidget(parent), ui(new Ui::mainsence) {
+    ui->setupUi(this);
+
+    //配置主场景
+    //设置固定大小
+    setFixedSize(1200,900);
+    setWindowTitle("基于物联网的智能语音机械臂抓取系统");
+
+
+    //点击开始按钮
+    menustartbtn=new mypushbutton("/home/jkx/CLionProjects/armros/res/start.png");
+    menustartbtn->setParent(this);
+    menustartbtn->move(1000,700);//移动到右下角
+    menustartbtn->setFixedSize(150,150);//设置按钮的大小
+    menustartbtn->setIconSize(QSize(150,150));//设置填充图像的大小
+    chosescene=new chosselevelscene();
+    connect( menustartbtn,&mypushbutton::clicked,this,[=]()
+     {
+         qDebug()  <<" 点击开始";
+         //弹起特效
+         menustartbtn ->zoom1();
+         menustartbtn->zoom2();
+        //延时进入
+        QTimer::singleShot(500,this,[=]()
+        {
+            //显示关卡   隐藏开始界面
+                this->hide();
+                chosescene->show();
+        });
+
+     });
+}
+```
+
+3. 定时器 QTimer 延时进入
+
+   ```
+   QTimer::singleShot(500，)
+   ```
+
+   
+
+#### 3、自定义按钮类mypushbutton 
+
+
+
+public继承QpushButton  主要为了实现弹跳特效，在按钮上显示名字，按钮的图片形式
+
+```cpp
+class mypushbutton:public QPushButton {
+
+    Q_OBJECT
+    public:
+    // explicit mypushbutton(QWidget *parent = nullptr);
+    //构造按下显示功能
+    mypushbutton(QString  normalimage,QString pressimage="");
+    QString normalimagepath;
+    QString pressimagepath;
+
+    //弹跳特效
+    void zoom1();//向下
+    void zoom2(); //向上
+};
+```
+
+mypushbutton的构造函数，，加载图片，显示设置图标位置和大小
+
+```cpp
+mypushbutton::mypushbutton(QString  normalimage,QString pressimage)
+{
+    this->normalimagepath=normalimage;
+    this->pressimagepath=pressimage;
+    QPixmap pix;
+    bool ret=pix.load(normalimage);
+    if (!ret)
+    {
+        qDebug()<<"图片加载失败";
+        return;
+    }
+
+    //设置按钮固定大小
+    this->setFixedSize(pix.width(),pix.height());
+    // //设置不规则央视大小//
+    this->setStyleSheet("QPushButton{border:0px;}");//{ border: 0px; }：设置该控件的边框为 0 像素，即不显示边框
+    //设置图标
+    this->setIcon(pix);//你这个按钮是用图片做外观的（通过 setIcon() 设置图片），如果不去掉边框，默认样式会让图片外面有一圈灰边，看起来很丑或不协调。
+    //设置图标大小
+    this->setIconSize(QSize(pix.width(),pix.height()));
+}
+```
+
+设置按钮的弹跳效果，通过创建动画对象anination(创建动画对象QPropertyAnimation，动画完成时间，设置起始位置setstartvalue，设置结束位置 setendvalue ,设置弹跳曲线 setEasingCurve,开始动画，start())
+
+```cpp
+//弹跳特效
+void mypushbutton:: zoom1()
+{
+    //创建动画特效对象
+    QPropertyAnimation *animation=new QPropertyAnimation(this,"geometry");
+    //设置时间间隔
+    animation->setDuration(200);
+    //起始位置
+    animation->setStartValue(QRect(this->x(),this->y(),this->width(),this->height()));
+    //结束位置
+    animation->setEndValue(QRect(this->x(),this->y()+20,this->width(),this->height()));
+    //设置弹条曲线
+    animation->setEasingCurve(QEasingCurve::OutBounce);
+    //开始动画
+    animation->start();
+
+}//向下
+void mypushbutton::zoom2()
+{
+
+    //创建动画特效对象
+    QPropertyAnimation *animation=new QPropertyAnimation(this,"geometry");
+    //设置时间间隔
+    animation->setDuration(200);
+    //起始位置
+    animation->setStartValue(QRect(this->x(),this->y()+20,this->width(),this->height()));
+    //结束位置
+    animation->setEndValue(QRect(this->x(),this->y(),this->width(),this->height()));
+    //设置弹条曲线
+    animation->setEasingCurve(QEasingCurve::OutBounce);
+    //开始动画
+    animation->start();
+
+}//向上
+
+```
+
+
+
+```cpp
+    //点击开始按钮
+    menustartbtn=new mypushbutton("/home/jkx/CLionProjects/armros/res/start.png");//自定义类，以图片显示按钮，并实现了跳动功能
+    menustartbtn->setParent(this);
+    menustartbtn->move(1000,700);
+    menustartbtn->setFixedSize(150,150);
+    menustartbtn->setIconSize(QSize(150,150));
+    chosescene=new chosselevelscene();
+    connect( menustartbtn,&mypushbutton::clicked,this,[=]()
+```
+
+#### 4、自定义chosselevelscene类（第二个界面）
+
+继承自QMainWindow(包含功能栏，上侧，左侧，)
+
+分为三层，涉及布局，返回上一页按钮，
+
+第一层（显示名称，显示设置和首页按钮）
+
+第二层（没什么用）
+
+第三层（四个模式  信息显示，控制，信息存储，对话模式）
+
+![image-20250727163942267](assets/image-20250727163942267.png)
+
+
+
+
+
+```cpp
+    //绘图事件
+    void paintEvent(QPaintEvent* event) override;
+    // QPushButton *settingsBtn ==NULL;
+    // 添加按钮成员
+    myiconbutton* settingsBtn;
+    myiconbutton*  homeBtn;
+    myiconbutton*  showBtn;
+    myiconbutton* modeBtn;
+    myiconbutton*  infoBtn;
+    myiconbutton*  dialogbtn ;
+
+    panelbtnscene *panelBtnscene=NULL;
+    showbtnscene *showBtnscene=NULL;  //显示场景
+    showbtnscene *controlBtnscene=NULL;
+    showbtnscene *dialogBtnscene=NULL;
+private slots: //槽函数
+void onSettingsClicked();
+    void onHomeClicked();
+    void onshowBtn();
+    void onmodeBtn();
+    void oninfoBtn();
+    void ondialogbtn();
+
+    void onpanelBtn();
+    void onarmBtn();
+    void onallBtn();
+
+
+
+};
+
+
+
+```
+
+
+
+##### 布局
+
+你这段代码是在一个主窗口中：
+
+- 固定窗口大小为 1200x900；
+- 创建了一个主布局（垂直方向的 `QVBoxLayout`）；
+- 在主布局中添加了一个顶部导航栏（`topBar`）；
+- 顶部导航栏内部又是一个水平布局，左中右分别放了：设置按钮 / 标题标签 / 首页按钮；
+- 顶部导航栏有漂亮的**渐变背景色**。
+
+
+
+```cpp
+chosselevelscene::chosselevelscene(QWidget *parent): QMainWindow(parent)
+{
+
+       // 配置主窗口
+        this->setFixedSize(1200, 900);
+        this->setWindowTitle("基于物联网的智能语音机械臂抓取系统");
+
+        // 创建主中心部件
+    //Qt 的 QMainWindow 需要一个 中心部件（central widget），作为承载所有控件的容器；这两行创建一个 QWidget，并把它设为主窗口的中心部件；后续的布局、按钮都放到 centralWidget 里面。
+        QWidget *centralWidget = new QWidget(this);
+        this->setCentralWidget(centralWidget);
+
+        // 主垂直布局
+    //mainLayout 是垂直布局（QVBoxLayout）：控件会从上往下排列；设置了 控件之间不留空隙（spacing=0）；设置了 边距为0，控件紧贴四边。
+        QVBoxLayout *mainLayout = new QVBoxLayout(centralWidget);
+        mainLayout->setSpacing(0);
+        mainLayout->setContentsMargins(0, 0, 0, 0);
+
+        // 1. 顶部导航栏
+        QWidget *topBar = new QWidget(centralWidget);/*是普通构造函数调用，不是拷贝构造。它的意思是：创建一个 QWidget 对象 topBar。并设置它的父对象是 centralWidget（父对象用于 Qt 的对象树管理、自动销毁、事件传递等）。*/
+        topBar->setFixedWidth(1200);
+        topBar->setFixedHeight(200);
+
+        // 顶部导航栏渐变背景
+        QLinearGradient topGradient(0, 0, 0, topBar->height());
+		topGradient.setColorAt(0, QColor(0, 70, 140));       // 渐变起点（顶部）颜色：深蓝
+		topGradient.setColorAt(1, QColor(100, 180, 255));    // 渐变终点（底部）颜色：浅蓝
+	
+    	
+        QPalette topPalette;
+        topPalette.setBrush(QPalette::Window, topGradient);//把渐变背景设置到 topBar 上；
+        topBar->setAutoFillBackground(true);//setAutoFillBackground(true)：允许控件自动绘制背景；
+        topBar->setPalette(topPalette);//这样就能看到你设置的渐变色了。
+		////创建顶部水平布局 topLayout：参数是 topBar，表示这个布局的父对象是 topBar，会自动嵌套在它内部。
+        QHBoxLayout *topLayout = new QHBoxLayout(topBar);
+        topLayout->setContentsMargins(20, 0, 20, 0);//设置布局的边距：左 20px，右 20px，上下 0px。保证内容不会紧贴 topBar 边缘，有更好的 UI 间距。
+
+        // 左侧设置按钮
+        settingsBtn = myiconbutton::createIconButton("/home/jkx/CLionProjects/armros/res/setbtn.png", "设置", 100);
+        // 中间标题创建一个标签 QLabel，显示系统名称作为标题。父控件是 topBar，保证它也在顶部栏中。
+        QLabel *titleLabel = new QLabel("基于物联网的智能语音机械臂抓取系统", topBar);
+        titleLabel->setStyleSheet("QLabel {"
+                                 "background-color: rgba(255, 255, 255, 0.3);"
+                                 "border-radius: 15px;"
+                                 "padding: 10px 20px;"
+                                 "color: white;"
+                                 "font-size: 20px;"
+                                 "font-weight: bold;"
+                                 "}");
+    /*
+    设置 titleLabel 的样式：
+半透明白色背景（30% 不透明度）
+圆角 15px
+内边距：上下 10px、左右 20px
+白色字体，大小 20px，粗体
+视觉上让标签像一个“浮在渐变背景上的标题气泡”
+    */
+        // 右侧首页按钮
+        homeBtn = myiconbutton::createIconButton("/home/jkx/CLionProjects/armros/res/homebtn.png", "首页", 100);
+		//把三个控件添加到布局中将“设置”按钮添加到布局最左侧，垂直方向居中。
+
+        topLayout->addWidget(settingsBtn, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    //将标题添加到布局中间，水平垂直都居中。
+        topLayout->addWidget(titleLabel, 0, Qt::AlignCenter);
+    //将“首页”按钮添加到布局最右侧，垂直方向居中。
+        topLayout->addWidget(homeBtn, 0, Qt::AlignRight | Qt::AlignVCenter);
+
+
+
+
+        // 2. 中间功能区
+        QWidget *middleArea = new QWidget(centralWidget);
+        middleArea->setFixedWidth(1200);
+        middleArea->setFixedHeight(500);
+        middleArea->move(0,200);
+        middleArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
+        // 中间区域渐变背景
+        QLinearGradient middleGradient(0, 0, 0, middleArea->height());
+        middleGradient.setColorAt(0, QColor(100, 180, 255));  // 浅蓝
+        middleGradient.setColorAt(1, QColor(150, 210, 255));  // 更浅的蓝
+
+        QPalette middlePalette;
+        middlePalette.setBrush(QPalette::Window, middleGradient);
+        middleArea->setAutoFillBackground(true);
+        middleArea->setPalette(middlePalette);
+
+        QHBoxLayout *middleLayout = new QHBoxLayout(middleArea);
+        middleLayout->setSpacing(50);//它们之间默认会有 setSpacing(50) 指定的间隔；
+        middleLayout->setContentsMargins(50, 50, 50, 50);
+    //布局整体会在 middleArea 中留出四周的 边距 50 像素（由 setContentsMargins 设置）；
+
+        // 创建三个圆形按钮
+         panelBtn = circlebutton::createCircleButton(this,"/home/jkx/CLionProjects/armros/res/parts.jpg", "操作台", 200);
+        armBtn = circlebutton::createCircleButton(this,"/home/jkx/CLionProjects/armros/res/ur3.jpg", "机械臂", 200);
+        allBtn = circlebutton::createCircleButton(this,"/home/jkx/CLionProjects/armros/res/zongheimg.png", "综合", 200);
+		//每个按钮会在其布局单元格中居中对齐，因为用了 Qt::AlignCenter。
+        middleLayout->addWidget(panelBtn, 0, Qt::AlignCenter);
+        middleLayout->addWidget(armBtn, 0, Qt::AlignCenter);
+        middleLayout->addWidget(allBtn, 0, Qt::AlignCenter);
+
+
+        // 3. 底部菜单栏
+        QWidget *bottomBar = new QWidget(centralWidget);
+        bottomBar->setFixedWidth(1200);
+        bottomBar->setFixedHeight(200);
+        bottomBar->move(0,700);
+
+        // 底部菜单栏渐变背景
+        QLinearGradient bottomGradient(0, 0, 0, bottomBar->height());
+        bottomGradient.setColorAt(0, QColor(50, 120, 200));  // 中等蓝
+        bottomGradient.setColorAt(1, QColor(30, 90, 160));  // 深蓝
+
+        QPalette bottomPalette;
+        bottomPalette.setBrush(QPalette::Window, bottomGradient);
+        bottomBar->setAutoFillBackground(true);
+        bottomBar->setPalette(bottomPalette);
+
+        QHBoxLayout *bottomLayout = new QHBoxLayout(bottomBar);
+        bottomLayout->setSpacing(80);
+        bottomLayout->setContentsMargins(150, 0, 150, 0);
+
+        // 创建底部三个功能按钮
+        showBtn = myiconbutton::createIconButton("/home/jkx/CLionProjects/armros/res/show_img.png", "显示模式", 100);
+        modeBtn = myiconbutton::createIconButton("/home/jkx/CLionProjects/armros/res/contral_img.png", "控制模式", 100);
+        infoBtn = myiconbutton::createIconButton("/home/jkx/CLionProjects/armros/res/infor_img.png", "信息存储", 100);
+        dialogbtn = myiconbutton::createIconButton("/home/jkx/CLionProjects/armros/res/dialog_img.png", "对话模式", 100);
+    
+        bottomLayout->addWidget(showBtn, 0, Qt::AlignCenter);
+        bottomLayout->addWidget(modeBtn, 0, Qt::AlignCenter);
+        bottomLayout->addWidget(infoBtn, 0, Qt::AlignCenter);
+        bottomLayout->addWidget(dialogbtn, 0, Qt::AlignCenter);
+
+        // 将各部分添加到主布局假设 mainLayout 是一个 垂直布局（QVBoxLayout），这段代码的目的是把三个控件依次垂直排列到主窗口的中心部件里。
+        mainLayout->addWidget(topBar);//把顶部导航栏 topBar 添加到主垂直布局中。topBar 会放在最上面。这里没有给伸展因子，默认是 0，表示它不参与拉伸，大小固定。
+        mainLayout->addWidget(middleArea, 1);//把 middleArea（中间区域）添加到垂直布局中。第二个参数 1 是 伸展因子（stretch factor），表示 middleArea 会占用剩余空间，即垂直方向上会被拉伸放大。这使得 middleArea 具备弹性，能随着窗口大小调整自身高度，填满 topBar 和 bottomBar 之间的空白。
+        mainLayout->addWidget(bottomBar);//这使得 middleArea 具备弹性，能随着窗口大小调整自身高度，填满 topBar 和 bottomBar 之间的空白。同样没有伸展因子，大小固定，不拉伸。
+    
+    
+        panelBtnscene=new panelbtnscene();
+    //每个 showbtnscene 窗口内部都拥有一个自己的 ROS 线程。所以最终一共会创建 3 个线程，每个线程绑定一个窗口。
+
+
+        showBtnscene=new showbtnscene();
+        controlBtnscene=new showbtnscene();
+        dialogBtnscene=new showbtnscene();
+
+
+
+        // 连接信号槽
+        connect(settingsBtn, &QPushButton::clicked, this, &chosselevelscene::onSettingsClicked);
+        connect(homeBtn, &QPushButton::clicked, this, &chosselevelscene::onHomeClicked);
+        connect(showBtn, &QPushButton::clicked, this, &chosselevelscene::onshowBtn);
+        connect(modeBtn,&QPushButton::clicked,this,&chosselevelscene::onmodeBtn);
+        connect(infoBtn,&QPushButton::clicked,this,&chosselevelscene::oninfoBtn);
+        connect(dialogbtn,&QPushButton::clicked,this,&chosselevelscene::ondialogbtn);
+
+        connect(panelBtn,&QPushButton::clicked,this,&chosselevelscene::onpanelBtn);
+        connect(armBtn,&QPushButton::clicked,this,&chosselevelscene::onarmBtn);
+        connect(allBtn,&QPushButton::clicked,this,&chosselevelscene::onallBtn);
+
+        //1. 退回上一界面   显示界面返回上一界面
+        connect(showBtnscene->exit,&QPushButton::clicked,[=]()
+        {
+            showBtnscene->exit->zoom3();
+            showBtnscene->exit->zoom4();
+                    //延时进入
+            QTimer::singleShot(500,this,[=]()
+            {
+                qDebug() << "返回上一界面";
+                //显示关卡   隐藏开始界面
+                showBtnscene->hide();
+                this->show();
+            });
+
+        });
+    //2.控制界面退回上一界面
+    connect(controlBtnscene->exit,&QPushButton::clicked,[=]()
+    {
+        controlBtnscene->exit->zoom3();
+        controlBtnscene->exit->zoom4();
+                //延时进入
+        QTimer::singleShot(500,this,[=]()
+        {
+            qDebug() << "返回上一界面";
+            //显示关卡   隐藏开始界面
+            controlBtnscene->hide();
+            this->show();
+        });
+
+    });
+
+    //3 对话界面退回上一界面
+    connect(dialogBtnscene->exit,&QPushButton::clicked,[=]()
+    {
+        dialogBtnscene->exit->zoom3();
+        dialogBtnscene->exit->zoom4();
+                //延时进入
+        QTimer::singleShot(500,this,[=]()
+        {
+            qDebug() << "返回上一界面";
+            //显示关卡   隐藏开始界面
+            dialogBtnscene->hide();
+            this->show();
+        });
+
+    });                                                                                                                                                     
+
+
+}
+
+
+
+
+```
+
+✅ 什么是 `QPalette`？
+
+`QPalette` 是 Qt 中用于**控制控件颜色（前景、背景、按钮等）**的类，定义在 `<QPalette>` 中。
+
+它允许你为不同的控件状态（如正常、禁用、活动）设置不同的颜色。例如：
+
+```
+cppCopy codeQPalette topPalette;
+topPalette.setColor(QPalette::Background, Qt::blue);
+topBar->setAutoFillBackground(true);
+topBar->setPalette(topPalette);
+```
+
+这段代码表示：
+
+- 设置 `topPalette` 背景色为蓝色。
+- 启用自动填充背景。
+- 将调色板应用到 `topBar` 控件
+
+
+
+
+
+🌈 1. 创建渐变对象
+
+```
+cppCopy codeQLinearGradient topGradient(0, 0, 0, topBar->height());
+topGradient.setColorAt(0, QColor(0, 70, 140));       // 顶部颜色：深蓝
+topGradient.setColorAt(1, QColor(100, 180, 255));    // 底部颜色：浅蓝
+```
+
+- `QLinearGradient(x1, y1, x2, y2)`：创建一个从 `(0,0)` 到 `(0,height)` 的线性渐变（即**垂直方向**渐变）。
+- `setColorAt(position, color)`：设置位置处的颜色，`0` 是起点，`1` 是终点。
+
+🎨 2. 设置到调色板中
+
+```
+cppCopy codeQPalette topPalette;
+topPalette.setBrush(QPalette::Window, topGradient);
+```
+
+- 创建一个调色板 `QPalette`。
+- 用 `setBrush()` 给调色板的 **`Window` 角色（也就是背景）** 设置渐变画刷（brush）：
+  - 这里不是用纯色，而是用一个 `QBrush` 包装的渐变对象（`QLinearGradient` 可隐式转换成 `QBrush`）。
+
+🧱 3. 应用到控件上
+
+```
+cppCopy codetopBar->setAutoFillBackground(true);
+topBar->setPalette(topPalette);
+```
+
+- `setAutoFillBackground(true)`：
+  - 默认控件不会自动用 palette 来填充背景。
+  - 必须启用这个选项，Qt 才会自动用你设置的调色板来**填充控件背景**。
+- `setPalette(topPalette)`：
+  - 把你上面准备好的带渐变背景的调色板 `topPalette` 应用到 `topBar` 控件上。
+
+🔁 它们的关联总结如下：
+
+| 步骤 | 功能                                     | 示例                                 |
+| ---- | ---------------------------------------- | ------------------------------------ |
+| 1    | 定义一个垂直方向的颜色渐变               | `QLinearGradient`                    |
+| 2    | 把渐变作为画刷，赋值给调色板的背景色角色 | `QPalette::Window`                   |
+| 3    | 启用自动背景填充，并将调色板设置到控件上 | `setAutoFillBackground + setPalette` |
+
+
+
+> 只有这三者配合使用，才能正确显示你想要的渐变背景。
+
+
+
+####  创建一个ICONbutton(带图像和图形下面有文字)
+
+![image-20250727175829757](assets/image-20250727175829757.png)
+
+
+
+#### circlebutton
+
+circlebutton
+
+![image-20250727180446573](assets/image-20250727180446573.png)
+
+
+
+![image-20250727180651432](assets/image-20250727180651432.png)
+
+
+
+
+
+![image-20250727180747815](assets/image-20250727180747815.png)
 
 
 
@@ -13277,6 +14053,549 @@ argc, argv：传入命令行参数。
 
 
 
+#### showbtnscene 
+
+每个showbtnscene类创建一个内部线程，RosThread是自己创建的类
+
+```cpp
+
+showbtnscene::showbtnscene(QWidget *parent)
+    : QMainWindow(parent), ui(new Ui::showbtnscene) {
+    ui->setupUi(this);
+
+    // 初始化ROS线程（注意传递参数）
+    int fake_argc = 1;
+    char* fake_argv[] = {"dummy_node"};
+    ros_thread = new RosThread(fake_argc, fake_argv, this);
+
+    //创建ros_thread  接收信息包括  ur gripper   物品
+    receive_info_from_topic();
+
+
+
+    //五个界面切换以及主窗口显示  控件的连接 一开始就监控话题和控件控制
+    showbtnscene_main();
+
+
+
+}
+
+```
+
+//创建ros_thread  接收信息包括  ur gripper   物品
+    receive_info_from_topic();   
+
+作用  链接信号和槽
+
+
+
+```cpp
+void showbtnscene::receive_info_from_topic()
+{
+
+
+
+    // 确保连接在启动线程前建立   ur机械臂信息接收
+    bool connected=connect(ros_thread, &RosThread::newArmState, this,
+        [=](const my_qtpkg::Armmsg& msg) {
+            // qDebug() << "信号槽连接状态:" << connected;
+            // qDebug() << "qt调用槽函数   显示数值";
+            ui->shoulder_pan_joint->setText(QString::number(msg.shoulder_pan, 'f', 4));
+            ui->shoulder_lift_joint->setText(QString::number(msg.shoulder_lift, 'f', 4));
+            ui->elbow_joint->setText(QString::number(msg.elbow, 'f', 4));
+            ui->wrist_1_joint->setText(QString::number(msg.wrist_1, 'f', 4));
+            ui->wrist_2_joint->setText(QString::number(msg.wrist_2, 'f', 4));
+            ui->wrist_3_joint->setText(QString::number(msg.wrist_3, 'f', 4));
+        }, Qt::QueuedConnection); // 重要！必须使用队列连接
+    //robotiq 85 夹爪  信息接收显示更新
+    bool connected_finger=connect(ros_thread,&RosThread::newfingerState,this,[=](const my_qtpkg::Finger& msg)
+    {
+        // qDebug() << "Finger  信号槽连接状态:" << connected_finger;
+        ui->effector_position_desire->setText(QString::number(msg.effector_position_desired,'f',4));
+        ui->effector_position_acturl->setText(QString::number(msg.effector_position_actual,'f',4));
+    });
+    //空间物品  信息接收显示
+    bool connected_object =connect(ros_thread,&RosThread::newobjectState,this,[=](const my_qtpkg::Objectmsg& msg)
+    {
+        // qDebug() << "Object  信号槽连接状态:" << connected_object;
+        ui->object1_posx->setText(QString::number(msg.object1_x,'f',4));
+        ui->object1_posy->setText(QString::number(msg.object1_y,'f',4));
+        ui->object1_posz->setText(QString::number(msg.object1_z,'f',4));
+        ui->object1_orx->setText(QString::number(msg.object1_orientation_x,'f',4));
+        ui->object1_ory->setText(QString::number(msg.object1_orientation_y,'f',4));
+        ui->object1_orz->setText(QString::number(msg.object1_orientation_z,'f',4));
+        ui->object1_orw->setText(QString::number(msg.object1_orientation_w,'f',4));
+
+        ui->object2_posx->setText(QString::number(msg.object2_x,'f',4));
+        ui->object2_posy->setText(QString::number(msg.object2_y,'f',4));
+        ui->object2_posz->setText(QString::number(msg.object2_z,'f',4));
+        ui->object2_orx->setText(QString::number(msg.object2_orientation_x,'f',4));
+        ui->object2_ory->setText(QString::number(msg.object2_orientation_y,'f',4));
+        ui->object2_orz->setText(QString::number(msg.object2_orientation_z,'f',4));
+        ui->object2_orw->setText(QString::number(msg.object2_orientation_w,'f',4));
+
+        ui->object3_posx->setText(QString::number(msg.object3_x,'f',4));
+        ui->object3_posy->setText(QString::number(msg.object3_y,'f',4));
+        ui->object3_posz->setText(QString::number(msg.object3_z,'f',4));
+        ui->object3_orx->setText(QString::number(msg.object3_orientation_x,'f',4));
+        ui->object3_ory->setText(QString::number(msg.object3_orientation_y,'f',4));
+        ui->object3_orz->setText(QString::number(msg.object3_orientation_z,'f',4));
+        ui->object3_orw->setText(QString::number(msg.object3_orientation_w,'f',4));
+
+    });
+    ros_thread->start();
+
+}
+```
+
+| 连接类型               | 是否线程安全 | 描述                                                         |
+| ---------------------- | ------------ | ------------------------------------------------------------ |
+| `Qt::DirectConnection` | ❌ 否         | 槽函数在**发送信号的线程**中执行，跨线程时会出问题。         |
+| `Qt::QueuedConnection` | ✅ 是         | 槽函数通过**事件队列**在**接收者所属线程**中执行，跨线程时必须用。 |
+| `Qt::AutoConnection`   | ⚠️ 不总是安全 | 默认，Qt 会根据线程情况自动选择 `Direct` 或 `Queued`，但不够明确，有隐患。 |
+
+![image-20250727202258567](assets/image-20250727202258567.png)
+
+进入子界面，每一个字界面都有顶部导航栏的垂直布局和水平布局，(根据按钮切换stackwidget)  点击对话框，会初始化一个python进程
+
+connect  链接每个按钮模式选择的信号和槽
+
+control_connect(); //一进来就启动的函数所以一直监控话题的发布和控制
+
+```cpp
+
+void showbtnscene::showbtnscene_main()
+{
+
+    this->setFixedSize(1200, 900);
+    this->setWindowTitle("信息显示");
+
+    // 1. 创建中心部件
+    QWidget *centralWidget = new QWidget(this);
+    this->setCentralWidget(centralWidget);
+
+    // 2. 创建主垂直布局
+    QVBoxLayout *mainLayout = new QVBoxLayout(centralWidget);
+    mainLayout->setSpacing(0);
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+
+    // 3. 顶部导航栏部分
+    QWidget *topBar = new QWidget();
+    topBar->setFixedHeight(100);
+
+    // 设置顶部导航栏背景渐变
+    QLinearGradient topGradient(0, 0, 0, topBar->height());
+    topGradient.setColorAt(0, QColor(0, 70, 140));
+    topGradient.setColorAt(1, QColor(100, 180, 255));
+    QPalette topPalette;
+    topPalette.setBrush(QPalette::Window, topGradient);
+    topBar->setAutoFillBackground(true);
+    topBar->setPalette(topPalette);
+
+    // 顶部布局
+    QHBoxLayout *topLayout = new QHBoxLayout(topBar);
+    topLayout->setContentsMargins(20, 0, 20, 0);
+
+    // 顶部按钮与标题
+    exit = myiconbutton::createIconButton("/home/jkx/CLionProjects/armros/res/backbtn.png", "后退", 100);
+    QLabel *titleLabel = new QLabel("基于物联网的智能语音机械臂抓取系统", topBar);
+    titleLabel->setStyleSheet("QLabel {"
+                              "background-color: rgba(255, 255, 255, 0.3);"
+                              "border-radius: 15px;"
+                              "padding: 10px 20px;"
+                              "color: white;"
+                              "font-size: 20px;"
+                              "font-weight: bold;"
+                              "}");
+    homeBtn = myiconbutton::createIconButton("/home/jkx/CLionProjects/armros/res/homebtn.png", "首页", 80);
+
+    topLayout->addWidget(exit, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    topLayout->addStretch();
+    topLayout->addWidget(titleLabel, 0, Qt::AlignCenter);
+    topLayout->addStretch();
+    topLayout->addWidget(homeBtn, 0, Qt::AlignRight | Qt::AlignVCenter);
+
+    // 将 topBar 添加到主布局
+    mainLayout->addWidget(topBar);
+
+    // 4. 中部内容部分（groupBox + stackedWidget）水平布局
+    QWidget *centerWidget = new QWidget();
+    QHBoxLayout *centerLayout = new QHBoxLayout(centerWidget);
+    centerLayout->setContentsMargins(0, 0, 0, 0);
+    centerLayout->setSpacing(0);
+
+    // 确保 stackedWidget 和 groupBox 都可见
+    ui->groupBox->setMinimumWidth(400);
+    ui->stackedWidget->setMinimumWidth(800);
+
+    centerLayout->addWidget(ui->groupBox);
+    centerLayout->addWidget(ui->stackedWidget);
+
+    // 添加中部内容到主布局
+    mainLayout->addWidget(centerWidget);
+
+    // 5. 设置 stackedWidget 初始界面
+    ui->stackedWidget->setCurrentIndex(0);
+
+    // 6. 按钮切换 stackedWidget 页
+    connect(ui->btnstart, &QPushButton::clicked, this, [=]() {
+        ui->stackedWidget->setCurrentIndex(4);
+    });
+
+    connect(ui->btncontrol, &QPushButton::clicked, this, [=]() {
+        ui->stackedWidget->setCurrentIndex(2);
+    });
+
+    //对话框的设置
+    connect(ui->btndialog, &QPushButton::clicked, this, [=]() {
+        ui->stackedWidget->setCurrentIndex(1);
+
+    });
+    dialog_seting();
+
+    connect(ui->baseinfo, &QPushButton::clicked, this, [=]() {
+        ui->stackedWidget->setCurrentIndex(0);
+        ui->shoulder_lift_joint->setText("1");
+    });
+
+    connect(ui->btnshowfile, &QPushButton::clicked, this, [=]() {
+        ui->stackedWidget->setCurrentIndex(3);
+    });
+
+    // 7. 打开文件逻辑
+    connect(ui->btnopenfile, &QPushButton::clicked, this, [=]() {
+        QString path = QFileDialog::getOpenFileName(this, "打开文件", "/home/jkx/CLionProjects");
+        ui->lineEdit->setText(path);
+
+        QFile file(path);
+        file.open(QIODevice::ReadWrite);
+        QByteArray array = file.readAll();
+        ui->textEdit->setText(array);
+        file.close();
+
+        QFile file2(path);
+        file2.open(QIODevice::Append);
+        file2.write("测试豫剧");
+        file2.close();
+
+        QFileInfo info(path);
+        qDebug() << "大小:" << info.size() << "路径:" << info.filePath();
+    });
+    //一上来就显示信息并监控滑块的状态
+    control_connect();
+
+
+}
+```
+
+control_connect 函数 
+
+监控如果控件的值value改变了，就触发话题发送函数
+
+```cpp
+//控件的连接   夹爪和ur的滑干
+void showbtnscene::control_connect()
+{
+
+   // (1) shoulder_pan_joint 的slider 控制
+    void (QDoubleSpinBox::*spsignal1)(double) = &QDoubleSpinBox::valueChanged;  //函数指针
+    // std::function<void(QDoubleSpinBox*,double)> spsignal1 =&QDoubleSpinBox::valueChanged;
+    connect(ui->shoulder_pan_joint_doubleSpinBox,spsignal1,this,[=](double value)
+    {
+    ui->shoulder_pan_joint_horizontalSlider->setValue(value);
+    send_info_to_topic();
+    }
+    );
+    connect(ui->shoulder_pan_joint_horizontalSlider,&QSlider::valueChanged,this,[=](double value )
+    {
+    ui->shoulder_pan_joint_doubleSpinBox->setValue(value);
+    send_info_to_topic();
+    }
+    );
+。。。。。。。
+
+}
+
+```
+
+发送函数，什么是线程安全的发送
+
+```c++
+void showbtnscene::send_info_to_topic()
+{
+    try {
+        qDebug() << "正在发送机械臂和夹爪控制指令...";
+
+        // 1. 发送机械臂关节指令
+        my_qtpkg::Armmsg arm_msg;
+        arm_msg.shoulder_pan = ui->shoulder_pan_joint_doubleSpinBox->value();
+        arm_msg.shoulder_lift = ui->shoulder_lift_joint_doubleSpinBox->value();
+        arm_msg.elbow = ui->elbow_joint_doubleSpinBox->value();
+        arm_msg.wrist_1 = ui->wrist_1_joint_doubleSpinBox->value();
+        arm_msg.wrist_2 = ui->wrist_2_joint_doubleSpinBox->value();
+        arm_msg.wrist_3 = ui->wrist_3_joint_doubleSpinBox->value();
+
+        // 2. 发送夹爪指令
+        my_qtpkg::Finger finger_msg;
+        finger_msg.effector_position_desired = ui->gripper_position_doubleSpinBox->value();
+        // finger_msg.effector_position_actual = 0.0; // 实际位置通常由反馈获取
+
+        // 3. 验证数据有效性
+        if (qIsNaN(arm_msg.shoulder_pan)) {  // 修正了括号问题
+            throw std::runtime_error("无效的关节角度值");
+        }
+
+        // 4. 线程安全发布
+        QMetaObject::invokeMethod(ros_thread, [this, arm_msg, finger_msg]() {
+            if (ros_thread) {
+                ros_thread->publisheArmCommand(arm_msg);
+                ros_thread->publishGripperCommand(finger_msg);
+                qDebug() << "控制指令已发送";
+            }
+        }, Qt::QueuedConnection);  // 确保括号匹配
+
+    } catch (const std::exception& e) {
+        qCritical() << "发送控制指令时出错:" << e.what();
+        QMessageBox::warning(this, "错误", QString("发送指令失败: %1").arg(e.what()));
+    }
+}
+
+```
+
+这段代码：
+
+- 使用 `invokeMethod` 并指定 `Qt::QueuedConnection` 连接方式。
+- 表示：这个 lambda 不会立刻执行，而是被**排入 ros_thread 所在线程的事件队列中**。
+- 当 ros_thread 所在线程的事件循环运行到这条消息时，它会执行 lambda 中的发布操作。
+
+这样就做到了**线程安全** —— 避免直接跨线程调用 `ros_thread->publishXxx()`，否则可能导致：
+
+- 非线程安全的数据访问
+- 段错误（segfault）
+- 死锁或竞态条件
+
+🧠 什么是“线程安全”发送？
+
+线程安全的发送 = 在多线程环境中，通过合理的机制（如锁、消息队列、Qt 的事件系统）**确保数据的访问和执行顺序不会出错**，尤其避免：
+
+- 多个线程同时访问同一对象导致未定义行为
+- 一个线程正在执行某个方法，另一个线程突然修改了数据或打断流程
+
+在 Qt 中推荐的线程安全做法之一就是：
+
+> **跨线程访问对象时，使用 `invokeMethod` 和 `Qt::QueuedConnection`，让对应线程自己去执行 lambda。**
+
+
+
+
+
+🔍 补充说明：为什么 `ros_thread` 可能不在 GUI 线程中？
+
+通常在 ROS + Qt 项目中，为了不阻塞 GUI，我们会将 ROS 通信单独放到线程里跑：
+
+```
+cppCopy coderos_thread = new RosThread();
+ros_thread->moveToThread(new QThread());
+```
+
+这时 `ros_thread` 的 `publisheArmCommand()` 就不是在 GUI 线程执行的了，必须用 `invokeMethod` 转发过去。
+
+
+
+就是 **线程安全的跨线程调用方式**，让 ROS 通信代码在它自己的线程里执行，不会和 UI 线程抢资源，非常标准的用法。👏
+
+#### dialog_seting  点击了对话框，当点击发送向后台LLM发送消息
+
+创建一个 `QProcess` 对象，可以用于在 **当前 Qt 程序中启动并管理一个外部进程**，例如 Python 脚本、Shell 脚本、命令行程序等。
+
+| 项目     | QThread                          | QProcess                                       |
+| -------- | -------------------------------- | ---------------------------------------------- |
+| 类型     | 线程（Thread）                   | 进程（Process）                                |
+| 用途     | 在同一个程序里并发执行任务       | 启动外部程序或命令行脚本                       |
+| 内存     | 和主程序共享内存                 | 独立内存空间，资源隔离                         |
+| 示例用途 | 做图像处理、传感器读写等后台任务 | 调用 Python 脚本、FFmpeg、roslaunch 等外部命令 |
+
+
+
+```cpp
+void   showbtnscene::dialog_seting()
+{
+
+    //初始化python进程
+    my_pythonprocess = new QProcess();//创建 QProcess 对象，用来 异步调用 Python 脚本（如：AI 模型）。
+
+//当 Python 脚本有输出时触发；读取输出字符串（一般是 AI 模型的回复），并调用 appendMessage("AI", response); 显示到 UI 中（比如对话框）。
+    connect(my_pythonprocess, &QProcess::readyReadStandardOutput, this, [=]()
+    {
+        QString response = QString::fromUtf8(my_pythonprocess->readAllStandardOutput()).trimmed();
+        appendMessage("AI",response);
+
+    });
+	//当用户点击“发送按钮”时，处理逻辑如下：
+
+    connect(ui->dialogsendbtn,&QPushButton::clicked,this,[=]()
+    {
+        QString usertext=ui->dialogtextEdit->toPlainText().trimmed(); //输入框去掉首位空格
+
+        if (!usertext .isEmpty())
+        {
+
+            //清空输入框
+            ui->dialogtextEdit->clear();
+
+            //构建系统状态
+            QString stateinfo="\n\n=== current system ststes===\n";
+            //添加物品信息
+            stateinfo+="----object------\n";
+          
+
+            //将状态添加到用户输入
+            QString fullprompt=usertext+stateinfo;
+            //调用difi的模型生成回复
+            //添加用户消息到对话框     //自定义
+            appendMessage("You",fullprompt);
+            generateLLMsResponse(fullprompt);
+        }
+
+
+    });
+}
+
+```
+
+#### generateLLMsResponse(fullprompt)->sendtodify(userinput,conversationId,userId)
+
+```cpp
+void  showbtnscene::generateLLMsResponse(const QString &userinput)
+{
+    appendMessage("AI","正在思考......");
+
+    //使用对话ID跟踪会话（可以生成或从之前保存）
+    QString conversationId="";
+    QString userId = "user-" + QString::number(QDateTime::currentSecsSinceEpoch());
+    //调用新dify  api方法
+    sendToDify(userinput,conversationId,userId);
+
+}
+
+```
+
+这段代码是 Qt 中使用 `QNetworkAccessManager` 向 **Dify（一个 LLM 接口服务）发送聊天请求** 的完整流程。
+ 以下是它的 **逐行解释**，让你彻底理解每一步在干什么：
+
+`userinput`: 用户发送的文本（提示词）
+
+`conversationId`: Dify对话ID（用于上下文保持）
+
+`userId`: 当前用户唯一标识
+
+
+
+
+
+✅ `QNetworkAccessManager` 是什么？
+
+`QNetworkAccessManager` 是 Qt 提供的 **统一的网络访问接口类**，用于发起各种 HTTP/HTTPS 请求，如 GET、POST、PUT、DELETE 等。
+
+✳️ 主要作用：
+
+- 发送网络请求（例如 HTTP GET、POST）
+- 管理 Cookie、代理、SSL 等网络相关设置
+- 异步处理网络响应（不阻塞主线程）
+
+```cpp
+
+void showbtnscene::sendToDify(const QString &userinput, const QString &conversationId, const QString &userId)
+{
+    //1. 创建网络请求对象  创建 Qt 网络管理器 manager指定请求的 URL（这是 Dify 的本地 API 接口）
+    QNetworkAccessManager *manager = new QNetworkAccessManager(this);
+    QUrl url("http://192.168.50.85:5001/v1/chat-messages");
+    QNetworkRequest request(url);
+	//2. 设置代理与SSL 
+    //禁用系统默认代理设置，避免干扰
+    QNetworkProxyFactory::setUseSystemConfiguration(false);
+    // 禁用SSL验证 配置 SSL，跳过证书验证（用于开发或本地服务器）
+    QSslConfiguration sslConfig = QSslConfiguration::defaultConfiguration();
+    sslConfig.setPeerVerifyMode(QSslSocket::VerifyNone);
+    request.setSslConfiguration(sslConfig);
+
+    // 3. 设置请求头
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json"); //设置请求为 JSON 格式
+    request.setRawHeader("Authorization", "Bearer app-d8rW4HfvUvGbfGPxMAg9QNFq"); //添加身份验证：Bearer 令牌是访问 Dify 所需的 API 密钥
+
+
+
+    // 4. 构建JSON请求体
+    QJsonObject requestBody;
+    requestBody["inputs"] = QJsonObject(); //留空，表示无额外输入字段
+    requestBody["query"] = userinput;  //你要问的问题或指令
+    requestBody["response_mode"] = "streaming"; //streaming  表示服务器会逐步返回答案（适合实时显示）
+    if(!conversationId.isEmpty()) {  //如果有会话ID，附上以便持续对话上下文
+        requestBody["conversation_id"] = conversationId;
+    }
+    requestBody["user"] = userId;//如果有会话ID，附上以便持续对话上下文
+
+    // 5. 文件附件 可选
+    QJsonArray filesArray;
+    QJsonObject fileObject;
+    fileObject["type"] = "image";
+    fileObject["transfer_method"] = "remote_url";//使用 "remote_url" 说明图片是从网络加载的
+    fileObject["url"] = "https://cloud.dify.ai/logo/logo-site.png";
+    filesArray.append(fileObject);
+    requestBody["files"] = filesArray;
+	//6. 转为Json字节流并发送POST请求
+    QByteArray postData = QJsonDocument(requestBody).toJson();
+    QNetworkReply *reply = manager->post(request, postData);//通过 post 向 API 发送请求，返回结果 reply
+
+    // 7. 旧版Qt错误处理 监听 error 信号：当网络出错（如断网、超时）时，打印错误并提示用户释放资源
+    connect(reply, QOverload<QNetworkReply::NetworkError>::of(&QNetworkReply::error),
+        [=](QNetworkReply::NetworkError code) {
+            qDebug() << "Network Error:" << code << reply->errorString();
+            appendMessage("System", "API请求失败: " + reply->errorString());
+            reply->deleteLater();
+            manager->deleteLater();
+        });
+
+    // 8. 接收数据流（流式输出模式） 每当服务器有数据到达，就触发 readyRead
+    connect(reply, &QNetworkReply::readyRead, [this, reply]() {
+        this->processStreamingResponse(reply->readAll());//调用 processStreamingResponse(...) 处理内容（如一边接收一边显示）
+    });
+
+    // 9. 请求结束清理  发送和规划结果给gazebo
+    connect(reply, &QNetworkReply::finished, [=]() {
+        if(reply->error() == QNetworkReply::NoError) {
+            qDebug() << "Request completed successfully";
+            sendtaskqueue(); //sendtaskqueue
+        }
+        reply->deleteLater();
+        manager->deleteLater();
+    });
+}
+```
+
+LLM生成结束  发送规划结果给gazebo
+
+```cpp
+void showbtnscene::sendtaskqueue() {
+    QString fullText = ui->dialog_box->toPlainText();  // 获取对话框全部文本
+    QString aiResponse = extractLastAiMessage(fullText);  // 提取最后一条 AI 消息
+
+    if (!aiResponse.isEmpty()) {
+        my_qtpkg::Taskstring msg;
+        msg.task_queue = aiResponse.toStdString();//这是 QString 的成员函数，作用是将 QString 转换为标准 C++ 字符串类型 std::string。
+        ros_thread->publishtaskqueue(msg); //调用发布函数
+        qDebug() << "ROS 消息已发布：" << aiResponse;
+    }
+}
+
+// 辅助函数：从完整文本中提取最后一条 AI 消息
+QString showbtnscene::extractLastAiMessage(const QString &fullText) {
+    int lastAiPos = fullText.lastIndexOf("AI [");
+    if (lastAiPos == -1) return "";
+
+    return fullText.mid(lastAiPos).trimmed();//mid(int position) 是 Qt 的 QString 类的成员函数，表示从字符串 fullText 的位置 lastAiPos 开始，一直到字符串末尾，提取出一个子串
+}
+```
 
 
 
@@ -13284,9 +14603,270 @@ argc, argv：传入命令行参数。
 
 
 
+| 部分         | 功能                           |
+| ------------ | ------------------------------ |
+| 网络请求构建 | 连接本地 Dify 接口，带身份验证 |
+| JSON 请求体  | 包含用户问题 + 状态 + 附件     |
+| 流式处理     | 实时获取模型响应               |
+| 错误处理     | 网络错误提示，避免崩溃         |
+| 回调联动     | 请求完成后触发任务执行         |
 
 
 
+processStreamingResponse 流式处理：
+
+这段代码是 `showbtnscene::processStreamingResponse` 函数的定义，用于处理从 AI 接口（例如 OpenAI 的 ChatGPT）连续传输（Streaming）返回的数据。它逐段分析接收到的数据流，并动态更新界面上的对话内容。下面逐句解释其含义和作用：
+
+
+
+```cpp
+void showbtnscene::processStreamingResponse(const QByteArray &data)
+{
+    if (m_currentAiMessageId.isEmpty()) { // 如果当前还没有接收到任何消息 ID（说明是新会话），则记录当前时间作为该消息的时间戳。
+        m_messageTime = QDateTime::currentDateTime().toString("hh:mm");
+    }
+	/*
+	将 data 转换为 UTF-8 编码的 QString，然后按行分割，生成字符串列表 lines。QString::SkipEmptyParts 表示忽略空行。*/
+    QString rawData = QString::fromUtf8(data);
+    QStringList lines = rawData.split('\n', QString::SkipEmptyParts);
+	//遍历每一行字符串（即每条流式返回的数据）。若该行不是以 "data:" 开头，则忽略（不是有效数据）。
+
+    foreach (const QString &line, lines) {
+        if (!line.startsWith("data:")) continue;
+	//将去掉 "data:" 前缀后的 JSON 字符串转为 QJsonDocument 对象。如果转换失败，说明该行不是有效 JSON，跳过。
+        QJsonDocument doc = QJsonDocument::fromJson(line.mid(5).toUtf8());
+        if (doc.isNull()) continue;
+		//提取 JSON 对象部分。
+        QJsonObject obj = doc.object();
+        if (obj["event"].toString() == "message") { //如果该对象的 "event" 字段是 "message"，说明是正式消息。
+            QString messageId = obj["message_id"].toString();//提取消息 ID 和实际返回的内容（AI 答案）
+            QString content = obj["answer"].toString();
+
+            // 处理Thinking区块（可忽略）如果内容中包含 <details style="color:gray，说明是“AI正在思考”的状态块（某些模型输出中用于中间结果展示），直接显示该内容，并标记正在处理 Thinking 块。
+            if (content.contains("<details style=\"color:gray")) {
+                appendMessage("AI", content);
+                m_isThinkingBlockActive = true;
+                continue;
+            }
+//如果是 </details>，说明“思考”块结束了，将标记复位。
+            if (content.contains("</details>")) {
+                m_isThinkingBlockActive = false;
+                continue;
+            }
+
+            // 处理正式响应如果当前不处于“思考”块中，表示是正式响应内容。
+
+            if (!m_isThinkingBlockActive) {
+				//如果当前消息 ID 和上次记录的不一致（说明是新消息），则调用 finalizeAiMessage() 完成之前的消息更新，同时更新当前消息 ID。
+                if (messageId != m_currentAiMessageId) {
+                    finalizeAiMessage(); // 完成上一条消息
+                    m_currentAiMessageId = messageId;
+
+                }
+                //将当前内容追加到 m_currentAiResponse 中，并更新界面中最后一条 AI 消息的显示内容。
+                m_currentAiResponse += content;
+                updateLastAiMessage(); // 只更新最后一个块
+
+            }
+        }
+    }
+} 
+```
+
+### 总结核心流程：
+
+1. 解析从网络接收到的流式数据；
+2. 检查数据是否为 message 类型；
+3. 特殊处理“thinking”块；
+4. 动态追加内容到当前 AI 回复，更新 UI；
+5. 若 message ID 变了，则完成上一条消息的显示，开始新消息。
+
+
+
+#### RosThread自定义线程函数
+
+
+
+发送机械臂  夹爪，LLM规划结果的函数，每个线程里面都定义了订阅状态和发布指令的响应函数，订阅来自gazebo中发布的话题，调用callback()接受传进来的自定义类型数据，然后emit触发信号，调用相应的显示控件显示，同时adversior发布命令，gazebo接收。
+
+```cpp
+class RosThread : public QThread {
+    Q_OBJECT
+public:
+    explicit RosThread(int argc = 0, char** argv = nullptr, QObject *parent = nullptr);
+    ~RosThread();
+
+    void stop(); // 添加停止方法
+    //发布话题的函数
+    void publisheArmCommand(const my_qtpkg::Armmsg &msg); //发送机械臂指令
+    void publishGripperCommand(const my_qtpkg::Finger &msg); //发送finger指令
+    //发布任务规划结果
+    void publishtaskqueue(const  my_qtpkg::Taskstring &str); //发送finger指令
+
+
+protected:
+    void run() override; //run() 是线程启动后实际执行的函数，它相当于线程的主函数，在你调用 start() 后，Qt 会在新线程中自动调用你重写的 run() 函数。
+
+
+    signals:
+        void newArmState(const my_qtpkg::Armmsg& msg);
+        void newfingerState(const my_qtpkg::Finger& msg);
+         void newobjectState(const my_qtpkg::Objectmsg& msg);
+
+private:
+    void armStateCallback(const my_qtpkg::Armmsg::ConstPtr& msg);
+    void fingerStateCallback(const my_qtpkg::Finger::ConstPtr& msg);
+    void objectStateCallback(const my_qtpkg::Objectmsg::ConstPtr& msg);
+    int argc_;
+    char** argv_;
+    bool running_; // 运行状态标志
+    ros::AsyncSpinner* spinner_; // 改用异步spinner
+
+    ros::Publisher  arm_pub_;
+    ros::Publisher  gripper_pub_;
+
+    ros::Publisher  taskqueue_pub_;
+};
+
+#endif // ROS_THREAD_H
+```
+
+
+
+```cpp
+#include "RosThread.h"
+#include <QDebug>
+
+#include <my_qtpkg/Armmsg.h>  // 确保包含你的消息头文件
+#include <my_qtpkg/Finger.h>
+#include <my_qtpkg/Taskstring.h>
+#include <my_qtpkg/Objectmsg.h>
+
+
+RosThread::RosThread(int argc, char** argv, QObject *parent)
+    : QThread(parent), argc_(argc), argv_(argv), running_(false), spinner_(nullptr) {qDebug() << "主线程ID:" << QThread::currentThreadId();}
+
+RosThread::~RosThread() {
+    stop();
+}
+
+void RosThread::stop() {
+    if(running_) {
+        running_ = false;
+        ros::shutdown();
+/*
+停止 ROS 节点系统。该函数会通知 ROS 系统退出，关闭订阅、发布器、服务等资源。
+如果使用了 ros::init() 初始化节点，ros::shutdown() 是对应的清理操作。
+会触发 ros::ok() 变为 false，从而让 ros::spin() 等函数退出。
+*/
+        if(spinner_) spinner_->stop();
+/*
+spinner_ 可能是 ros::AsyncSpinner* 类型的指针。
+spinner_->stop() 会停止 ROS 的异步回调线程，不再响应订阅回调等。
+这通常用于异步回调场景，避免资源冲突。
+*/
+        wait();
+/*
+wait() 是 QThread 提供的函数：阻塞当前线程，直到子线程退出（run() 结束）。
+这样做可以确保线程已经完全退出，资源已经释放，才继续往下执行，保证安全性。
+常见用法是在主线程中调用 stop() 后等待线程安全退出。
+*/
+    }
+}
+
+void RosThread::run() {
+       // 只初始化一次！
+    ros::init(argc_, argv_, "qt_arm_controller", ros::init_options::NoSigintHandler);
+    ros::init(argc_, argv_, "qt_arm_controller", ros::init_options::NoSigintHandler);
+    ros::init(argc_,argv_,"at_finger_controller",ros::init_options::NoSigintHandler);
+    ros::init(argc_,argv_,"send_info_node",ros::init_options::NoSigintHandler);
+    if (!ros::ok()) {
+        qWarning("ROS初始化失败！");
+        return;
+    }
+
+
+
+    //发送
+    ros::NodeHandle nh_send;
+    arm_pub_=nh_send.advertise<my_qtpkg::Armmsg>("/qt_arm_control_topic",100);
+    gripper_pub_=nh_send.advertise<my_qtpkg::Finger>("/qt_gripper_control_topic",100);
+    taskqueue_pub_=nh_send.advertise<my_qtpkg::Taskstring>("/qt/task_queue",100);
+    //接收
+    ros::NodeHandle nh_arm;
+    ros::Subscriber sub_arm = nh_arm.subscribe("/arm_join_states", 1,
+                                     &RosThread::armStateCallback, this);
+
+    ros::NodeHandle nh_finger;
+    ros::Subscriber sub_finger = nh_finger.subscribe("/finger_join_states", 1,
+                                     &RosThread::fingerStateCallback, this);
+    ros::NodeHandle ng_object;
+    ros::Subscriber sub_object = ng_object.subscribe("/object_states", 1,&RosThread::objectStateCallback,this);
+
+
+
+
+    // 使用异步Spinner（非阻塞）
+    spinner_ = new ros::AsyncSpinner(1);
+    spinner_->start();
+    running_ = true;
+
+    while(running_ && ros::ok()) {
+        QThread::msleep(100); // 降低CPU占用
+    }
+
+    // 清理
+    spinner_->stop();
+    delete spinner_;
+    qDebug() << "ROS线程退出，线程ID:" << QThread::currentThreadId();
+}
+
+void RosThread::armStateCallback(const my_qtpkg::Armmsg::ConstPtr& msg) {
+    // qDebug() << "qt接收到msg";
+    emit newArmState(*msg);
+    // qDebug() << "信号已发射";
+}
+
+void RosThread::fingerStateCallback(const my_qtpkg::Finger::ConstPtr& msg) {
+    // qDebug() << "qt接收到msg";
+    emit newfingerState(*msg);
+    // qDebug() << "信号已发射";
+}
+
+void RosThread::objectStateCallback(const my_qtpkg::Objectmsg::ConstPtr& msg) {
+    // qDebug() << "qt接收到msg";
+    emit newobjectState(*msg);
+    // qDebug() << "信号已发射";
+}
+
+
+//发布话题的函数
+void RosThread::publisheArmCommand(const my_qtpkg::Armmsg &msg)//发送机械臂指令
+{
+    if (ros::ok() && arm_pub_) {
+        arm_pub_.publish(msg);
+        qDebug() << "机械臂指令已发布";
+    }
+}
+
+void RosThread::publishGripperCommand(const my_qtpkg::Finger &msg)//发送finger指令
+{
+    if (ros::ok() && gripper_pub_) {
+        gripper_pub_.publish(msg);
+        qDebug() << "夹爪指令已发布";
+    }
+}
+
+void RosThread::publishtaskqueue(const my_qtpkg::Taskstring  &str)
+{
+    qDebug() << "调用 publishtaskqueue";
+    if (ros::ok() && taskqueue_pub_) {
+        taskqueue_pub_.publish(str);
+        qDebug() << "Dify规划结果已发布";
+        // qDebug()<<
+    }
+}
+```
 
 
 
