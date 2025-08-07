@@ -2711,7 +2711,7 @@ std::lock_guard<std::mutex> lg(mtx)
 具体分析如下：
 
 ```c++
-cppCopyEditfor (int i = 0; i < 10000; i++) {
+for (int i = 0; i < 10000; i++) {
     std::lock_guard<std::mutex> lg(mtx);  // 每次循环都会构造一个 lock_guard
     shared_data++;
 }
@@ -3044,7 +3044,7 @@ cv.notify_one();
 `std::queue<T>` 的 `front()` 返回的是 **左值引用（lvalue reference）**，也就是：
 
 ```
-cppCopyEditT& front();
+T& front();
 const T& front() const;
 ```
 
@@ -4812,6 +4812,7 @@ detach:让目标线程在后台执行，不在与当前线程关联，由系统�
 - 不可变设计
   - 将对象设计为在构造后**只读**，不暴露修改接口，天然线程安全。对需要更新的操作返回新的对象副本，遵循函数式编程思路。
 - 线程本地存储
+- 
   - 将每个线程需要的状态存放在thread_local变量中，避免共享，从而无需同步。
 - 封装细粒度
   - 将共享数据封装在类的私有成员中，只通过受控接口访问，不让外部直接访问裸指针或引用，减少错误使用的风险。
@@ -7786,29 +7787,45 @@ int main(void)
 
 ## 项目1：城市垃圾智能巡检单车
 
+**![image-20250804093135313](assets/image-20250804093135313.png)**
 
 
 
 
 
+**描述：**本项目基于飞思卡尔K车模与K210开发板开发了一套城市垃圾巡检系统，利用车载摄像头实时扫描路面识别并记录垃圾位置。
 
+**技术栈：K210、RT-Thread、SD/FATFS/DMA/SPI/Completion、UART/GPS**
 
+- 基于多线程架构与双缓机制实现图像采集、目标检测与数据存储的并发执行，支持在线道路巡航过程的实时识别与照片存储；
+- 基于 DMA + 完成量机制构建 SD/SPI/FATFS 阻塞式读写驱动，实现巡检照片高效写入至 SD 卡（单张图片写入耗时**125ms**）；
+- 基于 UART + FIFO 缓冲实现手机巡检指令实时解析与响应，并通过 RTT 事件机制触发小车运动模式切换与路径点动态设置；
 
 
 
+![image-20250805104303969](assets/image-20250805104303969.png)
 
+![image-20250805112747450](assets/image-20250805112747450.png)
 
 
 
+k210不支持
 
+K210有三个UART设备  我在这里 蓝牙与手机通信一个uart,GPS与K210一个UART
 
+![image-20250805151854017](assets/image-20250805151854017.png)
 
+发现了问题！K210 的 RT-Thread BSP 中的 UART 驱动**还没有实现 DMA 支持**！看到注释 `//TODO: add DMA support` 和 `RT_NULL//暂无DMA相关操作`。
 
+现在我来帮您正确修改 main.c，使用现有的 RT-Thread UART 框架（中断模式），并为您展示如何添加 DMA 支持：
 
+![image-20250805153750989](assets/image-20250805153750989.png)
 
 
 
+![image-20250805153817993](assets/image-20250805153817993.png)
 
+在RTT中不应该使用原生SDK的头文件，应该使用RTT提供的驱动
 
 
 
@@ -7818,9 +7835,11 @@ int main(void)
 
 
 
+![image-20250805162318663](assets/image-20250805162318663.png)
 
 
 
+![image-20250805162751071](assets/image-20250805162751071.png)
 
 
 
@@ -7828,93 +7847,2722 @@ int main(void)
 
 
 
+```c
+snprintf(detected_garbage,                   // 目标缓冲区
+         sizeof(detected_garbage),            // 缓冲区大小（防止溢出）
+         "%s_%.2f_%d",                       // 格式化字符串
+         yolo_result.garbage_types[best_idx], // 垃圾类型字符串
+         yolo_result.confidences[best_idx],   // 置信度（浮点数）
+         ++detection_counter);                // 检测计数器（自增）
+```
 
 
 
 
 
+### 针对 DMA+完成量的  SD/SPI/FATAS驱动移植
 
+#### 1. 首先是SPI的DMA驱动实现  （完成量）  两个函数 configure 和xfer
 
+K210的 RTTspi驱动
 
+rt-thread/bsp/k210/drivers/drv_spi.c
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+```c
+/*
+ * Copyright (c) 2006-2021, RT-Thread Development Team
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Change Logs:
+ * Date           Author       Notes
+ * 2019-03-18     ZYH          first version
+ */
+/*
+主要包括 
+1.头文件配置
+2.数据结构定义
+3.SPI配置函数
+4.SPI数据传输函数
+5.SPI初始化
+*/
+// #ifndef RT_USING_SPI
+// #error "RT_USING_SPI not defined!"
+// #endif
+
+#define RT_USING_SPI 
+#define BSP_USING_SPI1
+#define BSP_SPI1_USING_SS0
+
+#include <rtthread.h>  // RT-Thread操作系统核心头文件
+#include <rtdevice.h> // RT-Thread设备驱动框架头文件
+#include "../packages/K210-SDK-latest/lib/drivers/include/spi.h"   //K210  spi相关硬件配置
+#include <rtconfig.h>
+
+#ifdef RT_USING_SPI
+#include "drv_spi.h" //本驱动的头文件
+#include <drv_io_config.h>  // IO引脚配置
+#include <drivers/dev_spi.h>  //SPI设备定义
+#include "dmalock.h"  //DMA通道锁管理
+#include <sysctl.h> //系统控制相关
+#include <gpiohs.h>  //高速GPIO操作
+#include <string.h> 
+#include "utils.h" //实用工具
+#include  "../packages/K210-SDK-latest/lib/bsp/include/platform.h"
+#include  "../packages/K210-SDK-latest/lib/drivers/include/sysctl.h"
+#define DRV_SPI_DEVICE(spi_bus)    (struct drv_spi_bus *)(spi_bus)// 类型转换宏
+
+#define MAX_CLOCK   (40000000UL)  // SPI最大时钟频率40MHz
+
+// SPI总线数据结构
+struct drv_spi_bus
+{
+    struct rt_spi_bus parent;    // RT-Thread标准的SPI总线结构
+    spi_device_num_t spi_instance;  // SPI实例编号(0,1,2,3)
+    dmac_channel_number_t dma_send_channel;// 发送DMA通道
+    dmac_channel_number_t dma_recv_channel; // 接收DMA通道
+    struct rt_completion dma_completion;  // DMA完成信号量
+};
+/*
+// struct rt_spi_bus
+// {
+//     struct rt_device parent;
+//     rt_uint8_t mode;
+//     const struct rt_spi_ops *ops;
+
+// #ifdef RT_USING_DM
+//     rt_base_t cs_pins[RT_SPI_CS_CNT_MAX];
+//     rt_uint8_t cs_active_vals[RT_SPI_CS_CNT_MAX];
+//     rt_bool_t slave;
+//     int num_chipselect;
+// #endif  //RT_USING_DM 
+    // struct rt_mutex lock;
+    // struct rt_spi_device *owner;
+// };
+
+struct rt_spi_ops
+{
+    rt_err_t (*configure)(struct rt_spi_device *device, struct rt_spi_configuration *configuration);
+    rt_ssize_t (*xfer)(struct rt_spi_device *device, struct rt_spi_message *message);
+};
+
+*/
+
+// 片选(CS)引脚数据结构
+struct drv_cs
+{
+    int cs_index;  // 片选索引号
+    int cs_pin;    // 片选引脚号
+};
+// SPI硬件寄存器指针数组  spi_t  各种寄存器
+static volatile spi_t *const spi_instance[4] =
+{
+    (volatile spi_t *)SPI0_BASE_ADDR, //SPI0
+    (volatile spi_t *)SPI1_BASE_ADDR, //SPI1
+    (volatile spi_t *)SPI_SLAVE_BASE_ADDR,//从SPI
+    (volatile spi_t *)SPI3_BASE_ADDR  //SPI3
+};
+
+//SPI配置函数
+static rt_err_t drv_spi_configure(struct rt_spi_device *device,
+                                  struct rt_spi_configuration *configuration)
+{
+    rt_err_t ret = RT_EOK;
+    int freq = 0;
+    // 获取总线数据和片选引脚信息
+    struct drv_spi_bus *bus = DRV_SPI_DEVICE(device->bus);
+    struct drv_cs * cs = (struct drv_cs *)device->parent.user_data;
+    // 断言总线不为空
+    RT_ASSERT(bus != RT_NULL);
+    // 配置片选引脚为输出模式，并初始化为高电平(不选中)
+    gpiohs_set_drive_mode(cs->cs_pin, GPIO_DM_OUTPUT);
+    gpiohs_set_pin(cs->cs_pin, GPIO_PV_HIGH);
+
+#ifdef BSP_USING_SPI1_AS_QSPI
+    /* Todo:QSPI*/
+#else
+ // 初始化SPI硬件
+    spi_init(bus->spi_instance, configuration->mode & RT_SPI_MODE_3, SPI_FF_STANDARD, configuration->data_width, 0);
+/*
+    spi_init(bus->spi_instance,             // SPI实例号
+            configuration->mode & RT_SPI_MODE_3, // SPI模式(0-3)
+            SPI_FF_STANDARD,                // 标准SPI格式
+            configuration->data_width,      // 数据位宽
+            0);                             // 保留参数*/
+#endif
+// 设置SPI时钟频率(不超过最大频率)
+    freq = spi_set_clk_rate(bus->spi_instance, configuration->max_hz > MAX_CLOCK ? MAX_CLOCK : configuration->max_hz);
+    rt_kprintf("set spi freq %d\n", freq); // 打印设置的频率
+    return ret;
+}
+
+
+//当然可以！你提供的这个函数是 K210 的 SPI 控制器配置函数之一，函数名是：
+/*
+用来设置SPI的模式  SPIn  收  发 还是收发同时
+它的作用是：设置某个 SPI 控制器的 TMOD 模式（传输模式），例如：
+只发送（transmit-only）
+只接收（receive-only）
+同时收发（transmit & receive，full-duplex）
+EEPROM 模式（很少用）
+*/
+void __spi_set_tmod(uint8_t spi_num, uint32_t tmod)
+{   
+    //断言检查，spi_num 是否是合法编号（0~3）。
+    RT_ASSERT(spi_num < SPI_DEVICE_MAX);
+    volatile spi_t *spi_handle = spi[spi_num]; //获取对应 SPI 控制器的寄存器结构体指针（比如 spi[0] 就是 SPI0）
+    //找到SPI寄存器地址 此处是SPI1
+    //spi_t是spi寄存器，其中contrl0是用于控制模式选择的
+    uint8_t tmod_offset = 0;
+    switch(spi_num)
+    {
+        case 0:
+        case 1:
+        case 2:
+            tmod_offset = 8; //SPI0/SPI1/SPI2 的 TMOD 在 ctrlr0 的第 8:9 位
+            break;
+        case 3:
+        default:
+            tmod_offset = 10;//SPI3 的 TMOD 在 ctrlr0 的第 10:11 位
+            break;
+    }
+    //set_bit() 是一个宏或函数，用来清除并设置某几位
+    set_bit(&spi_handle->ctrlr0, 3 << tmod_offset, tmod << tmod_offset);
+    //spi_handle->ctrlr0 = (spi_handle->ctrlr0 & ~(3 << tmod_offset)) | (tmod << tmod_offset);
+    //与上一句等效
+}
+// 简单的DMA完成回调函数
+/*
+你调用 spi_transfer_dma(buffer, 512)，准备收 512 字节数据；
+SPI 控制器开始工作，同时配置 DMA，让它在 SPI 数据到来时自动写入 buffer；
+CPU 线程进入 rt_completion_wait()，等待 DMA 完成；
+当 512 字节全部传输完毕，DMA 触发中断；
+中断处理函数（也就是你说的 dma_irq_callback）被触发；
+在中断中调用 rt_completion_done()，唤醒刚才等待的线程；
+线程继续执行，处理收好的数据。
+*/
+int dma_irq_callback(void *ctx)
+{
+    struct rt_completion * cmp = ctx; // 获取完成信号量
+    if(cmp)
+    {
+        rt_completion_done(cmp); // 通知DMA传输完成
+    }
+}
+
+/*作用：驱动层的 SPI 数据传输函数。支持 DMA 模式。根据 message 中的信息发送/接收数据，可能是：
+仅发送、
+仅接收、
+同时收发（full-duplex）。
+*/
+static rt_uint32_t drv_spi_xfer(struct rt_spi_device *device, struct rt_spi_message *message)
+{
+    /*
+    struct rt_spi_message
+{
+    const void *send_buf;
+    void *recv_buf;
+    rt_size_t length;
+    struct rt_spi_message *next;
+
+    unsigned cs_take    : 1;
+    unsigned cs_release : 1;
+};*/
+    struct drv_spi_bus *bus = DRV_SPI_DEVICE(device->bus);  //获取 SPI 总线对象 bus（包含 DMA 通道等信息）。
+    struct drv_cs * cs = (struct drv_cs *)device->parent.user_data; //获取 cs（片选对象，控制 GPIO 片选）。
+    struct rt_spi_configuration *cfg = &device->config;  //cfg：SPI 配置，如数据宽度、极性等。
+    uint32_t * tx_buff = RT_NULL;    //tx_buff / rx_buff：为 DMA 分配的临时缓存。
+    uint32_t * rx_buff = RT_NULL;
+    int i;
+    rt_ubase_t dummy = 0xFFFFFFFFU;  //dummy：SPI 发数据时占位。 rt_uint64_t   
+    if(cfg->data_width != 8)  //本驱动只支持 8-bit 数据宽度，如果不是则退出。
+    {
+        return 0;
+    }
+
+    RT_ASSERT(bus != RT_NULL); 
+
+    if(message->cs_take)   //如果需要拉低片选，先设置 GPIO 低电平，选中 SPI 外设（如 SD 卡）。
+    //什么时候需要设置片选  我SPI0的总线上只有一个外设
+    {
+        gpiohs_set_pin(cs->cs_pin, GPIO_PV_LOW);
+    }
+
+    //开始DMA传输逻辑
+    if(message->length)
+    {
+        bus->dma_send_channel = DMAC_CHANNEL_MAX; //初始化 发送 DMA 通道为无效值；
+        bus->dma_recv_channel = DMAC_CHANNEL_MAX;//初始化 接收 DMA 通道为无效值；
+        //初始化完成量对象 dma_completion，用于等待 DMA 结束。
+        rt_completion_init(&bus->dma_completion); //置零
+        /*
+            占用 DMA 接收通道；
+            选择 SPI 接收为 DMA 源；
+            为接收数据分配临时缓冲区（32bit对齐）；
+            分配失败直接跳转退出。
+            const void *send_buf;
+            void *recv_buf;
+        */
+        if(message->recv_buf) 
+        {
+            dmalock_sync_take(&bus->dma_recv_channel, RT_WAITING_FOREVER);//自动分配一个通道 利用  dmalock_sync_take
+            /*这段函数 sysctl_dma_select 是用于在 K210 SoC 中**将 DMA 通道与特定外设请求源绑定（映射）**的函数，目的是指定某个 DMA 通道监听哪个外设（如 SSI、UART、I2C、ADC 等）的 DMA 请求。*/
+            sysctl_dma_select(bus->dma_recv_channel, SYSCTL_DMA_SELECT_SSI0_RX_REQ + bus->spi_instance * 2);//第二个参数是位移从SPI0开始计算  得到RX TX
+            //RT-Thread 中实现的一个标准内存分配函数 rt_calloc，以及一次调用它的例子
+            /*
+            这是 RT-Thread 中模仿标准 C 库的 calloc() 函数写的：
+            count: 要分配多少个元素；
+            size: 每个元素的大小；
+            返回值：返回一块总大小为 count * size 的内存，并且所有字节初始化为 0；
+            rt_weak: 表示这是一个弱定义函数，如果用户定义了同名强符号函数，则可以覆盖它。
+            */
+            rx_buff = rt_calloc(message->length * 4, 1);
+            if(!rx_buff)
+            {
+                goto transfer_done;
+            }
+        }
+        /*
+            占用 DMA 发送通道；
+            选择 SPI 发送为 DMA 源；
+            为发送数据申请缓冲区；
+            将原始 uint8_t 数据写入 32-bit 对齐缓冲区。
+        */
+        if(message->send_buf)
+        {
+            dmalock_sync_take(&bus->dma_send_channel, RT_WAITING_FOREVER);
+            sysctl_dma_select(bus->dma_send_channel, SYSCTL_DMA_SELECT_SSI0_TX_REQ + bus->spi_instance * 2);
+            tx_buff = rt_malloc(message->length * 4);
+            if(!tx_buff)
+            {
+                goto transfer_done;
+            }
+            for(i = 0; i < message->length; i++)
+            {
+                tx_buff[i] = ((uint8_t *)message->send_buf)[i];
+            }
+        }
+
+        if(message->send_buf && message->recv_buf)
+        {
+            /*
+            设置 SPI 为发送 + 接收模式（全双工）；
+            同时注册 发送和接收 DMA 中断回调；
+            启用 SPI + DMA；
+            设置 DMA：
+            接收：SPI_DR ➜ rx_buff；
+            发送：tx_buff ➜ SPI_DR。
+                注册 DMA 接收中断回调；
+                设置 SPI 为 收发模式；
+                使能 DMA 发送 + 接收；
+                启用 SPI 模块。
+            */
+           //注册中断函数
+            dmac_irq_register(bus->dma_recv_channel, dma_irq_callback, &bus->dma_completion, 1);
+            //设置spi寄存器  收发模式
+            __spi_set_tmod(bus->spi_instance, SPI_TMOD_TRANS_RECV);
+            //启 DMA 接收 + DMA 发送（位0 + 位1）。
+            spi_instance[bus->spi_instance]->dmacr = 0x3;  // 寄存器/位  dmacr = 3 含义  使能DMA发送和接收
+            //启用 SPI 模块。
+            spi_instance[bus->spi_instance]->ssienr = 0x01; //寄存器/位  ssienr = 1 含义 使能SPI  
+            
+            /*设置 DMA 接收：SPI 接收寄存器 ➜ rx_buff；设置 DMA 发送：tx_buff ➜ SPI 发送寄存器。*/  
+            //    /* SPI Data Register 0-36    (0x60 -- 0xec)      volatile uint32_t dr[36]; */
+            //通道   源地址  目的地址
+            /*
+            void dmac_set_single_mode(
+                dmac_channel_number_t channel,       // DMA 通道号
+                void *src,                           // 源地址
+                void *dst,                           // 目的地址
+                dmac_addr_increment_t src_inc,      // 源地址是否自增
+                dmac_addr_increment_t dst_inc,      // 目的地址是否自增
+                dmac_msize_t dmac_msize,            // 总线突发大小（一次搬几个）
+                dmac_transfer_width_t trans_width,  // 传输单位宽度（字节/半字/字）
+                size_t block_size                   // 总传输数量（单位个数，不是字节）
+            );
+            */
+            dmac_set_single_mode(bus->dma_recv_channel, (void *)(&spi_instance[bus->spi_instance]->dr[0]), rx_buff, DMAC_ADDR_NOCHANGE, DMAC_ADDR_INCREMENT,
+                           DMAC_MSIZE_1, DMAC_TRANS_WIDTH_32, message->length);
+            dmac_set_single_mode(bus->dma_send_channel, tx_buff, (void *)(&spi_instance[bus->spi_instance]->dr[0]), DMAC_ADDR_INCREMENT, DMAC_ADDR_NOCHANGE,
+                           DMAC_MSIZE_4, DMAC_TRANS_WIDTH_32, message->length);
+        
+                        }
+        else if(message->send_buf)
+        {
+            /*
+                设置为 SPI 发送模式；
+                只注册发送 DMA；
+                配置 DMA 将 tx_buff 发往 SPI。
+            */
+            dmac_irq_register(bus->dma_send_channel, dma_irq_callback, &bus->dma_completion, 1);
+            __spi_set_tmod(bus->spi_instance, SPI_TMOD_TRANS);
+            spi_instance[bus->spi_instance]->dmacr = 0x2;
+            spi_instance[bus->spi_instance]->ssienr = 0x01;
+            dmac_set_single_mode(bus->dma_send_channel, tx_buff, (void *)(&spi_instance[bus->spi_instance]->dr[0]), DMAC_ADDR_INCREMENT, DMAC_ADDR_NOCHANGE,
+                           DMAC_MSIZE_4, DMAC_TRANS_WIDTH_32, message->length);
+        }
+        else if(message->recv_buf)
+        {
+            /*
+                SPI 设置为接收模式；
+                告知控制器即将接收多少字节；
+                dr[0] = 0xFF：触发一次 dummy write（SPI 为主发，必须写点什么才收）；
+                设置 DMA 从 SPI ➜ rx_buff。
+                这段代码是 SPI “仅接收模式”+ DMA 传输配置的完整流程，在 K210（或其他 SPI 主机架构中）非常典型 —— 你希望仅接收数据，但因为 SPI 是全双工接口，主机必须“发东西”才能“收东西”，因此就需要一个技巧：Dummy Write（伪写）。
+
+            */
+            dmac_irq_register(bus->dma_recv_channel, dma_irq_callback, &bus->dma_completion, 1);
+            __spi_set_tmod(bus->spi_instance, SPI_TMOD_RECV);
+            spi_instance[bus->spi_instance]->ctrlr1 = message->length - 1;
+            /*
+             设置要接收的数据长度（控制器接收计数器）
+            这是 SPI 控制器的 CTRL1 寄存器；
+            写入 N-1，表示接收 N 个数据（单位为 word）；
+            控制器会自动接收完这 N 个后停止（且触发 DMA 完成中断）。
+            */
+            spi_instance[bus->spi_instance]->dmacr = 0x1; //所以 0x1 表示只开启接收。
+            spi_instance[bus->spi_instance]->ssienr = 0x01; //ssienr = 1 启动 SPI（SSI Enable）； 不写不会启动
+            spi_instance[bus->spi_instance]->dr[0] = 0xFF;
+            /*
+             Dummy Write：必须触发 SCLK 才能接收数据
+            即使你设置了“只接收”，SPI 是主机，也得先“动起来”，而动起来的方式就是先写一个字；
+            这会产生时钟（SCLK）；
+            从机才能在 SCLK 上送出第一字节。
+            ⚠️ 注意：
+            后续的数据是自动由 DMA 从 rx_fifo 读出来的；
+            但这个 Dummy Write 是启动的关键“第一脚”。
+            */
+            dmac_set_single_mode(bus->dma_recv_channel, (void *)(&spi_instance[bus->spi_instance]->dr[0]), rx_buff, DMAC_ADDR_NOCHANGE, DMAC_ADDR_INCREMENT,
+                           DMAC_MSIZE_1, DMAC_TRANS_WIDTH_32, message->length);
+        /*
+        
+        [ SPI 收模式开启 ]
+        │
+        ├─► 设置接收长度 (ctrlr1 = N-1)
+        ├─► 启用 DMA 接收
+        ├─► 启动 SPI 模块 (ssienr=1)
+        ├─► Dummy write dr[0]=0xFF
+        └─► DMA 从 SPI_DR ➜ rx_buff
+                     ↑
+           SPI 硬件接收从 MISO
+
+           */
+        
+                        }
+        else
+        {
+            goto transfer_done;
+        }
+        //启动传输
+        //
+        spi_instance[bus->spi_instance]->ser = 1U << cs->cs_index;//使能片选。
+
+        rt_completion_wait(&bus->dma_completion, RT_WAITING_FOREVER);//阻塞等待中断回调唤醒线程（DMA 完成）；
+        //清理&后处理   注销中断。
+        /*
+        收完或发完后，注销中断回调，避免残留回调影响后续；
+        dmac_irq_unregister(channel) 会将通道对应的中断注册项清除。
+        */
+        if(message->recv_buf)
+            dmac_irq_unregister(bus->dma_recv_channel);
+        else
+            dmac_irq_unregister(bus->dma_send_channel);
+
+        // wait until all data has been transmitted  等待 SPI 状态寄存器：发完、收完；0x05 是 busy + fifo not empty。
+        /*
+        这是一个状态轮询等待 SPI 传输完成的判断语句。
+        📌 解释：
+        sr 是 SPI 的 Status Register；
+        bit[0]: TFNF（Transmit FIFO Not Full）
+        bit[2]: TFE（Transmit FIFO Empty）
+        所以 0x05 表示 bit0 和 bit2；
+        == 0x04 表示：
+        TFE = 1：发送 FIFO 空；
+        TFNF = 0：不能再写入了（FIFO 满或禁用）；
+        ✅ 作用：
+        确保 FIFO 中数据都发送完了；
+        通常用于 SPI 主机在关闭片选信号前 清空发送缓存，避免截断数据。
+*/
+        while ((spi_instance[bus->spi_instance]->sr & 0x05) != 0x04)
+            ;
+            /*取消片选；禁用 SPI 控制器。*/
+        spi_instance[bus->spi_instance]->ser = 0x00;//失能片选
+        spi_instance[bus->spi_instance]->ssienr = 0x00;//禁止SPI控制器
+        //把 rx_buff 中数据拷贝回用户 buffer。
+        if(message->recv_buf)
+        {
+            for(i = 0; i < message->length; i++)
+            {
+                ((uint8_t *)message->recv_buf)[i] = (uint8_t)rx_buff[i];
+            }
+        }
+    //清理资源
+    /*
+    释放锁；释放 malloc 分配的临时 buffer。
+    */
+transfer_done:
+        dmalock_release(bus->dma_send_channel); //释放通道信号两
+        dmalock_release(bus->dma_recv_channel);
+        if(tx_buff)
+        {
+            rt_free(tx_buff); //释放临时buffer
+        }
+        if(rx_buff)
+        {
+            rt_free(rx_buff);
+        }
+    }
+        //如果需要自动释放片选，则拉高 GPIO。
+    if(message->cs_release)
+    {
+        gpiohs_set_pin(cs->cs_pin, GPIO_PV_HIGH);
+    }
+        //返回传输字节数。
+    return message->length;
+}
+
+const static struct rt_spi_ops drv_spi_ops =
+{
+    drv_spi_configure,
+    drv_spi_xfer
+};
+
+int rt_hw_spi_init(void)
+{
+    rt_err_t ret = RT_EOK;
+
+#ifdef BSP_USING_SPI1
+    {
+        static struct drv_spi_bus spi_bus1;
+        spi_bus1.spi_instance = SPI_DEVICE_1;
+        ret = rt_spi_bus_register(&spi_bus1.parent, "spi1", &drv_spi_ops);
+
+#ifdef BSP_SPI1_USING_SS0
+        {
+            static struct rt_spi_device spi_device10;
+            static struct drv_cs cs10 =
+            {
+                .cs_index = SPI_CHIP_SELECT_0, //	SPI 控制器内部的 片选编号（SPI0/1 支持 SS0 ~ SS3），控制 ser 寄存器的 bit
+                .cs_pin = SPI1_CS0_PIN  //SPI1_CS0_PIN 是一个枚举值（整数索引）；
+                //	实际连接到 CS 的引脚（GPIO 口）— 用于手动拉低/拉高选中/释放外设
+            };
+            //创建spi10 绑定到spi1
+            rt_spi_bus_attach_device(&spi_device10, "spi10", "spi1", (void *)&cs10);
+        }
+#endif
+
+#ifdef BSP_SPI1_USING_SS1
+        {
+            static struct rt_spi_device spi_device11;
+            static struct drv_cs cs11 =
+            {
+                .cs_index = SPI_CHIP_SELECT_1,
+                .cs_pin = SPI1_CS1_PIN
+            };
+            rt_spi_bus_attach_device(&spi_device11, "spi11", "spi1", (void *)&cs11);
+        }
+#endif
+
+#ifdef BSP_SPI1_USING_SS2
+        {
+            static struct rt_spi_device spi_device12;
+            static struct drv_cs cs12 =
+            {
+                .cs_index = SPI_CHIP_SELECT_2,
+                .cs_pin = SPI1_CS2_PIN
+            };
+            rt_spi_bus_attach_device(&spi_device12, "spi12", "spi1", (void *)&cs12);
+        }
+#endif
+
+#ifdef BSP_SPI1_USING_SS3
+        {
+            static struct rt_spi_device spi_device13;
+            static struct drv_cs cs13 =
+            {
+                .cs_index = SPI_CHIP_SELECT_2,
+                .cs_pin = SPI1_CS2_PIN
+            };
+            rt_spi_bus_attach_device(&spi_device13, "spi13", "spi1", (void *)&cs13);
+        }
+#endif
+    }
+#endif
+    return ret;
+}
+INIT_DEVICE_EXPORT(rt_hw_spi_init);
+#endif
+
+```
+
+
+
+```c
+// SPI总线数据结构
+struct drv_spi_bus
+{
+    struct rt_spi_bus parent;    // RT-Thread标准的SPI总线结构
+    spi_device_num_t spi_instance;  // SPI实例编号(0,1,2,3)
+    dmac_channel_number_t dma_send_channel;// 发送DMA通道
+    dmac_channel_number_t dma_recv_channel; // 接收DMA通道
+    struct rt_completion dma_completion;  // DMA完成信号量
+};
+```
+
+
+
+#### 2. SD/SPI/FATAS的驱动
+
+
+
+~~~c
+/*
+ * Copyright (c) 2006-2023, RT-Thread Development Team
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Change Logs:
+ * Date           Author       Notes
+ * 2009-04-17     Bernard      first version.
+ * 2010-07-15     aozima       Modify read/write according new block driver interface.
+ * 2012-02-01     aozima       use new RT-Thread SPI drivers.
+ * 2012-04-11     aozima       get max. data transfer rate from CSD[TRAN_SPEED].
+ * 2012-05-21     aozima       update MMC card support.
+ * 2018-03-09     aozima       fixed CSD Version 2.0 sector count calc.
+ */
+
+#include <string.h>
+#include "dev_spi_msd.h"
+
+//#define MSD_TRACE
+
+#ifdef MSD_TRACE
+    #define MSD_DEBUG(...)         rt_kprintf("[MSD] %d ", rt_tick_get()); rt_kprintf(__VA_ARGS__);
+#else
+    #define MSD_DEBUG(...)
+#endif /* #ifdef MSD_TRACE */
+
+#define DUMMY                 0xFF
+
+#define CARD_NCR_MAX          9
+
+#define CARD_NRC              1
+#define CARD_NCR              1
+
+static struct msd_device  _msd_device;
+
+/* function define */
+static rt_bool_t rt_tick_timeout(rt_tick_t tick_start, rt_tick_t tick_long);
+
+//note: 这个函数的作用是确保当前 SPI 设备成为 SPI 总线的“所有者”，并进行必要的配置。
+static rt_err_t MSD_take_owner(struct rt_spi_device *spi_device);
+
+//等待返回token  或等待返回DUMMY
+static rt_err_t _wait_token(struct rt_spi_device *device, uint8_t token);
+static rt_err_t _wait_ready(struct rt_spi_device *device);//recv == DUMMY
+//它会在 RT-Thread 设备框架中被调用。具体来说，它是在调用 rt_device_init() 函数时被触发的。
+/*
+msd_init 函数会注册一个名为 "sd0" 的 MSD 设备，并将其与 SPI 设备 "spi10" 绑定。
+在注册过程中，rt_device_register 会将 MSD 设备的初始化函数 rt_msd_init 绑定到设备的 init 回调中。
+*/
+static rt_err_t  rt_msd_init(rt_device_t dev);
+
+static rt_err_t  rt_msd_open(rt_device_t dev, rt_uint16_t oflag);
+static rt_err_t  rt_msd_close(rt_device_t dev);
+
+//
+static rt_ssize_t rt_msd_write(rt_device_t dev, rt_off_t pos, const void *buffer, rt_size_t size);
+static rt_ssize_t rt_msd_read(rt_device_t dev, rt_off_t pos, void *buffer, rt_size_t size);
+
+static rt_ssize_t rt_msd_sdhc_read(rt_device_t dev, rt_off_t pos, void *buffer, rt_size_t size);
+static rt_ssize_t rt_msd_sdhc_write(rt_device_t dev, rt_off_t pos, const void *buffer, rt_size_t size);
+
+static rt_err_t rt_msd_control(rt_device_t dev, int cmd, void *args);
+
+
+/*
+这个函数 MSD_take_owner 的作用是确保当前 SPI 设备成为 SPI 总线的“所有者”并进行必要的配置。具体流程如下：
+
+尝试获取 SPI 总线的互斥锁，保证线程安全，避免多个设备同时访问总线。
+判断当前总线的 owner 是否为本设备（spi_device）。如果不是，说明需要重新配置总线。
+调用总线的 configure 方法，用当前设备的配置参数重新配置 SPI 总线。
+配置成功后，将 owner 设置为当前设备，表示总线现在归这个设备所有。
+最后返回操作结果（rt_err_t 类型）。
+常见场景：
+在多设备共享同一个 SPI 总线时，每个设备通信前都需要确保总线已按自己的参数配置，并且自己是 owner，防止配置冲突。
+*/
+static rt_err_t MSD_take_owner(struct rt_spi_device *spi_device)
+{
+    rt_err_t result;
+
+    result = rt_mutex_take(&(spi_device->bus->lock), RT_WAITING_FOREVER);
+    if (result == RT_EOK)
+    {
+        if (spi_device->bus->owner != spi_device)
+        {
+            /* not the same owner as current, re-configure SPI bus */
+            result = spi_device->bus->ops->configure(spi_device, &spi_device->config);
+            if (result == RT_EOK)
+            {
+                /* set SPI bus owner */
+                spi_device->bus->owner = spi_device;
+            }
+        }
+    }
+
+    return result;
+}
+
+static rt_bool_t rt_tick_timeout(rt_tick_t tick_start, rt_tick_t tick_long)
+{
+    rt_tick_t tick_end = tick_start + tick_long;
+    rt_tick_t tick_now = rt_tick_get();
+    rt_bool_t result = RT_FALSE;
+
+    if (tick_end >= tick_start)
+    {
+        if (tick_now >= tick_end)
+        {
+            result = RT_TRUE;
+        }
+        else
+        {
+            result = RT_FALSE;
+        }
+    }
+    else
+    {
+        if ((tick_now < tick_start) && (tick_now >= tick_end))
+        {
+            result = RT_TRUE;
+        }
+        else
+        {
+            result = RT_FALSE;
+        }
+    }
+
+    return result;
+}
+
+static uint8_t crc7(const uint8_t *buf, int len)
+{
+    unsigned char   i, j, crc, ch, ch2, ch3;
+
+    crc = 0;
+
+    for (i = 0; i < len; i ++)
+    {
+        ch = buf[i];
+
+        for (j = 0; j < 8; j ++, ch <<= 1)
+        {
+            ch2 = (crc & 0x40) ? 1 : 0;
+            ch3 = (ch & 0x80) ? 1 : 0;
+
+            if (ch2 ^ ch3)
+            {
+                crc ^= 0x04;
+                crc <<= 1;
+                crc |= 0x01;
+            }
+            else
+            {
+                crc <<= 1;
+            }
+        }
+    }
+
+    return crc;
+}
+
+
+/*
+定义一个静态函数 _send_cmd，用于向 SD 卡发送命令并接收响应。
+参数说明：
+device：SPI 设备指针。
+cmd：命令字节。
+arg：命令参数。
+crc：CRC 校验码。
+type：响应类型。
+response：用于存放响应数据的缓冲区。
+
+是的，SD 卡内部确实有一个控制器芯片，它能够根据接收到的命令和参数（如扇区地址）自动定位到相应的扇区位置，并执行读写操作。
+
+以下是详细解释：
+
+---
+
+### 1. **SD 卡内部的控制器芯片**
+
+SD 卡内部包含一个微控制器（控制芯片），它负责管理存储介质（如 NAND 闪存）的操作。控制器芯片的功能包括：
+- 解析主机发送的命令（如读写命令）。
+- 根据命令中的参数（如扇区地址）定位到存储介质上的具体位置。
+- 执行读写操作，并返回结果。
+
+---
+
+### 2. **`_send_cmd` 的作用**
+
+在 dev_spi_msd.c 文件中，`_send_cmd` 函数会将命令和参数（如扇区地址）打包成符合 SD 卡协议的格式，通过 SPI 接口发送给 SD 卡。
+
+#### **代码片段：`_send_cmd`**
+```c
+cmd_buffer[2] = (uint8_t)(arg >> 24);   // 高字节
+cmd_buffer[3] = (uint8_t)(arg >> 16);
+cmd_buffer[4] = (uint8_t)(arg >> 8);
+cmd_buffer[5] = (uint8_t)(arg);         // 低字节
+```
+- `arg` 是扇区的起始地址（以字节为单位）。
+- 它被分成 4 个字节，填入命令缓冲区 `cmd_buffer` 中。
+- 这个缓冲区通过 SPI 接口发送给 SD 卡。
+
+---
+
+### 3. **SD 卡如何处理命令**
+
+SD 卡的控制器芯片会解析主机发送的命令，并根据命令类型和参数执行相应的操作。例如：
+
+#### **读操作**
+- 主机发送 `READ_SINGLE_BLOCK` 命令，并附带扇区地址。
+- SD 卡控制器根据扇区地址定位到存储介质上的具体位置。
+- SD 卡控制器读取数据，并通过 SPI 接口返回给主机。
+
+#### **写操作**
+- 主机发送 `WRITE_BLOCK` 命令，并附带扇区地址。
+- 主机随后通过 SPI 接口发送数据块。
+- SD 卡控制器将数据写入到指定的扇区。
+
+---
+
+### 4. **SD 卡协议的作用**
+
+SD 卡协议定义了主机与 SD 卡之间的通信规则，包括：
+- 命令格式（如 `CMD17` 表示读单块，`CMD24` 表示写单块）。
+- 参数格式（如扇区地址）。
+- 响应格式（如成功或失败的状态码）。
+
+主机通过 SPI 接口发送符合协议的命令，SD 卡控制器根据协议解析命令并执行操作。
+
+---
+
+### 5. **驱动程序的作用**
+
+驱动程序（如 dev_spi_msd.c）的作用是：
+- 将高层的读写请求（如逻辑块号）转换为符合 SD 卡协议的命令。
+- 通过 SPI 接口与 SD 卡通信。
+- 处理 SD 卡返回的响应。
+
+驱动程序不需要关心 SD 卡内部的具体实现，只需要按照协议发送命令和接收数据即可。
+
+---
+
+### 6. **总结**
+
+- **SD 卡内部有控制器芯片**：它能够根据主机发送的命令和参数（如扇区地址）自动定位到存储介质上的具体位置，并执行读写操作。
+- **驱动程序的作用**：负责将高层的读写请求转换为符合 SD 卡协议的命令，通过 SPI 接口与 SD 卡通信。
+- **主机与 SD 卡的交互**：主机通过 SPI 接口发送命令，SD 卡控制器解析命令并执行相应的操作。
+*/
+static rt_err_t _send_cmd(
+    struct rt_spi_device *device,
+    uint8_t cmd,
+    uint32_t arg,
+    uint8_t crc,
+    response_type type,
+    uint8_t *response
+)
+{
+    struct rt_spi_message message;  //定义 SPI 消息结构体 message。
+    uint8_t cmd_buffer[8];    //定义命令缓冲区 cmd_buffer，用于存放要发送的命令和参数
+    uint8_t recv_buffer[sizeof(cmd_buffer)]; //定义接收缓冲区 recv_buffer，用于接收数据。
+    uint32_t i; //定义循环变量 i
+
+    //构造SD卡命令包
+    cmd_buffer[0] = DUMMY; // 第 0 字节为 DUMMY（通常为 0xFF，用于时钟填充）。
+    cmd_buffer[1] = (cmd | 0x40); // 第 1 字节为命令字节，加上 0x40 标识这是命令而不是数据。
+    //_send_cmd 函数会将 arg 参数（即扇区的起始地址）打包到 SD 卡命令中，并通过 SPI 接口发送给 SD 卡。
+    cmd_buffer[2] = (uint8_t)(arg >> 24);   //第 2~5 字节为命令参数（高字节在前，低字节在后）。
+    cmd_buffer[3] = (uint8_t)(arg >> 16);
+    cmd_buffer[4] = (uint8_t)(arg >> 8);
+    cmd_buffer[5] = (uint8_t)(arg);
+    //CRC 校验处理
+    /*
+    如果 CRC 为 0，则自动计算 CRC7 校验码，并设置最后一位为 1（符合 SD 卡协议）。
+    第 6 字节为 CRC 校验码
+*/
+    if (crc == 0x00)
+    {
+        crc = crc7(&cmd_buffer[1], 5);
+        crc = (crc << 1) | 0x01;
+    }
+    cmd_buffer[6] = (crc);
+
+    cmd_buffer[7] = DUMMY;  //命令包最后加一个 DUMMY 字节（时钟填充）。
+
+    /* initial message 初始化 SPI 消息  设置 SPI 消息结构体，准备发送命令包。 */
+    message.send_buf = cmd_buffer;
+    message.recv_buf = recv_buffer;
+    message.length = sizeof(cmd_buffer);
+    message.cs_take = message.cs_release = 0;//	表示你手动控制 CS，系统不会自动管它
+    //等待 SD 卡准备好，避免在卡忙时发送命令。
+    _wait_ready(device);
+
+    /* transfer message  通过 SPI 总线发送命令包。 */
+    device->bus->ops->xfer(device, &message);
+    //等待响应  循环发送 DUMMY 字节，等待 SD 卡返回有效响应（最高位为 0 ）响应存入 response 缓冲区。
+    for (i = CARD_NCR; i < (CARD_NCR_MAX + 1); i++)
+    {
+        uint8_t send = DUMMY;
+
+        /* initial message */
+        message.send_buf = &send;
+        message.recv_buf = response;
+        message.length = 1;
+        message.cs_take = message.cs_release = 0;
+
+        /* transfer message */
+        device->bus->ops->xfer(device, &message);
+        //响应存入 response 缓冲区。
+        if (0 == (response[0] & 0x80)) 
+        {
+            break;
+        }
+    } /* wait response */
+
+    //响应超时处理
+    if ((CARD_NCR_MAX + 1) == i)
+    {
+        return -RT_ERROR;//fail 如果超过最大等待次数还没收到响应，则返回错误
+    }
+
+    //recieve other byte  根据响应类型处理后续字节  
+    //R1 类型只需一个字节，直接返回成功。
+    if (type == response_r1)
+    {
+        return RT_EOK;
+    }
+    else if (type == response_r1b)  //R1b 响应（带忙状态）
+    {
+        rt_tick_t tick_start = rt_tick_get();
+        uint8_t recv;
+
+        while (1)
+        {
+            /* initial message   R1B类型需等待SD卡忙状态结束（收到DUMMY） 超时则返回错误*/
+            message.send_buf = RT_NULL;
+            message.recv_buf = &recv;
+            message.length = 1;
+            message.cs_take = message.cs_release = 0;
+
+            /* transfer message */
+            device->bus->ops->xfer(device, &message);
+
+            if (recv == DUMMY)
+            {
+                return RT_EOK;
+            }
+
+            if (rt_tick_timeout(tick_start, rt_tick_from_millisecond(2000)))
+            {
+                return -RT_ETIMEOUT;
+            }
+        }
+    }
+    else if (type == response_r2) //R2 类型需再接收一个字节，存入响应缓冲区。
+    {
+        /* initial message */
+        /* Prevent non-aligned address access, use recv_buffer to receive data */
+        message.send_buf = RT_NULL;
+        message.recv_buf = recv_buffer;
+        message.length = 1;
+        message.cs_take = message.cs_release = 0;
+
+        /* transfer message */
+        device->bus->ops->xfer(device, &message);
+        response[1] = recv_buffer[0];
+    }
+    else if ((type == response_r3) || (type == response_r7)) //R3/R7 类型需再接收 4 个字节，存入响应缓冲区。
+    {
+        /* initial message */
+        message.send_buf = RT_NULL;
+        message.recv_buf = recv_buffer;
+        message.length = 4;
+        message.cs_take = message.cs_release = 0;
+
+        /* transfer message */
+        device->bus->ops->xfer(device, &message);
+        response[1] = recv_buffer[0];
+        response[2] = recv_buffer[1];
+        response[3] = recv_buffer[2];
+        response[4] = recv_buffer[3];
+    }
+    else
+    {
+        return -RT_ERROR; // unknow type? 如果响应类型未知，返回错误。
+    }
+
+    return RT_EOK;
+}
+/*
+用途：用于等待 SD 卡返回特定的令牌（token），表示某种特定的状态或操作开始。
+触发条件：等待 SD 卡返回指定的 token，例如数据起始标志（MSD_TOKEN_READ_START）。
+典型场景：在读取数据块时，等待 SD 卡返回数据起始标志。
+*/
+static rt_err_t _wait_token(struct rt_spi_device *device, uint8_t token)
+{  //等待返回tokn
+    struct rt_spi_message message;
+    rt_tick_t tick_start;
+    uint8_t send, recv;
+
+    tick_start = rt_tick_get();
+
+    /* wati token */
+    /* initial message */
+    send = DUMMY;
+    message.send_buf = &send;
+    message.recv_buf = &recv;
+    message.length = 1;
+    message.cs_take = message.cs_release = 0;
+
+    while (1)
+    {
+        /* transfer message */
+        device->bus->ops->xfer(device, &message);
+
+        if (recv == token)
+        {
+            return RT_EOK;
+        }
+
+        if (rt_tick_timeout(tick_start, rt_tick_from_millisecond(CARD_WAIT_TOKEN_TIMES)))
+        {
+            MSD_DEBUG("[err] wait data start token timeout!\r\n");
+            return -RT_ETIMEOUT;
+        }
+    } /* wati token */
+}
+
+/*
+这段代码是一个等待 SPI 设备准备好的函数。它的主要作用是轮询 SPI 设备，直到设备返回一个“准备好”的信号，或者超时为止。
+
+详细解释
+函数名：_wait_ready
+参数：struct rt_spi_device *device —— SPI 设备对象。
+返回值：rt_err_t —— 操作结果，成功返回 RT_EOK，超时返回 -RT_ETIMEOUT。
+步骤说明
+初始化消息结构体
+构造一个 SPI 消息，只发送一个字节（DUMMY），并接收一个字节。
+
+记录起始时间
+用于后续判断是否超时。
+
+轮询设备状态
+通过 device->bus->ops->xfer 发送消息并接收设备返回的数据。
+
+判断设备是否准备好
+如果收到的数据等于 DUMMY，说明设备已经准备好，函数返回成功。
+
+超时处理
+如果等待超过 1000 毫秒，打印调试信息并返回超时错误。
+
+关键点
+轮询机制：通过不断发送和接收数据，判断设备状态。
+超时保护：防止死循环，保证系统稳定。
+SPI 通信：利用 SPI 总线的 xfer 操作进行数据交换。
+
+用途：用于等待 SD 卡准备好，确保 SD 卡可以接收新的命令或数据。
+触发条件：等待 SD 卡返回一个 DUMMY 字节（通常是 0xFF），表示 SD 卡已经准备好。
+典型场景：在发送命令或数据之前，确保 SD 卡不再忙碌。
+*/
+static rt_err_t _wait_ready(struct rt_spi_device *device)
+{//等待返回 DUMMY
+    struct rt_spi_message message;
+    rt_tick_t tick_start;
+    uint8_t send, recv;
+
+    tick_start = rt_tick_get();
+
+    send = DUMMY;
+    /* initial message */
+    message.send_buf = &send;
+    message.recv_buf = &recv;
+    message.length = 1;
+    message.cs_take = message.cs_release = 0;
+
+    while (1)
+    {
+        /* transfer message */
+        device->bus->ops->xfer(device, &message);
+
+        if (recv == DUMMY)
+        {
+            return RT_EOK;
+        }
+
+        if (rt_tick_timeout(tick_start, rt_tick_from_millisecond(1000)))
+        {
+            MSD_DEBUG("[err] wait ready timeout!\r\n");
+            return -RT_ETIMEOUT;
+        }
+    }
+}
+
+//读单个块 存到buffer中
+static rt_err_t _read_block(struct rt_spi_device *device, void *buffer, uint32_t block_size)
+{
+    struct rt_spi_message message;
+    rt_err_t result;
+
+    /* wati token // 等待 S 卡准备好*/
+    result = _wait_token(device, MSD_TOKEN_READ_START);
+    if (result != RT_EOK)
+    {
+        return result;
+    }
+
+    /* read data */
+    {
+        /* initial message */
+        message.send_buf = RT_NULL;
+        message.recv_buf = buffer;
+        message.length = block_size;
+        message.cs_take = message.cs_release = 0;
+
+        /* transfer message  // 通过 SPI 接口读取数据*/
+        device->bus->ops->xfer(device, &message);
+    } /* read data */
+
+    /* get crc */
+    {
+        uint8_t recv_buffer[2];
+
+        /* initial message */
+        message.send_buf = RT_NULL;
+        message.recv_buf = recv_buffer;
+        message.length = 2;
+        message.cs_take = message.cs_release = 0;
+
+        /* transfer message */
+        device->bus->ops->xfer(device, &message);
+    } /* get crc */
+
+    return RT_EOK;
+}
+//写单个块 存到buffer中
+static rt_err_t _write_block(struct rt_spi_device *device, const void *buffer, uint32_t block_size, uint8_t token)
+{
+    struct rt_spi_message message;
+    uint8_t send_buffer[16];
+
+    rt_memset(send_buffer, DUMMY, sizeof(send_buffer));
+    send_buffer[sizeof(send_buffer) - 1] = token;
+
+    /* send start block token */
+    {
+        /* initial message */
+        message.send_buf = send_buffer;
+        message.recv_buf = RT_NULL;
+        message.length = sizeof(send_buffer);
+        message.cs_take = message.cs_release = 0;
+
+        /* transfer message */
+        device->bus->ops->xfer(device, &message);
+    }
+
+    /* send data */
+    {
+        /* initial message */
+        message.send_buf = buffer;
+        message.recv_buf = RT_NULL;
+        message.length = block_size;
+        message.cs_take = message.cs_release = 0;
+
+        /* transfer message */
+        device->bus->ops->xfer(device, &message);
+    }
+
+    /* put crc and get data response */
+    {
+        uint8_t recv_buffer[3];
+        uint8_t response;
+
+        /* initial message */
+        message.send_buf = send_buffer;
+        message.recv_buf = recv_buffer;
+        message.length = sizeof(recv_buffer);
+        message.cs_take = message.cs_release = 0;
+
+        /* transfer message */
+        device->bus->ops->xfer(device, &message);
+
+//        response = 0x0E & recv_buffer[2];
+        response = MSD_GET_DATA_RESPONSE(recv_buffer[2]);
+        if (response != MSD_DATA_OK)
+        {
+            MSD_DEBUG("[err] write block fail! data response : 0x%02X\r\n", response);
+            return -RT_ERROR;
+        }
+    }
+
+    /* wati ready */
+    return _wait_ready(device);
+}
+
+#ifdef RT_USING_DEVICE_OPS
+const static struct rt_device_ops msd_ops =
+{
+    rt_msd_init,
+    rt_msd_open,
+    rt_msd_close,
+    rt_msd_read,
+    rt_msd_write,
+    rt_msd_control
+};
+
+const static struct rt_device_ops msd_sdhc_ops =
+{
+    rt_msd_init,
+    rt_msd_open,
+    rt_msd_close,
+    rt_msd_sdhc_read,
+    rt_msd_sdhc_write,
+    rt_msd_control
+};
+#endif
+
+/* RT-Thread Device Driver Interface */
+/*  SD卡设备的init    yinjiao duiying    kuaishebei  spi  读写 sd
+这个时候才会真正执行 rt_msd_init() 的全部初始化流程（例如识别 SD 卡、初始化 SPI 协议、建立扇区信息）。
+*/
+static rt_err_t rt_msd_init(rt_device_t dev) //定义 SD 卡块设备的初始化函数，参数是 RT-Thread 设备指针。
+{
+    struct msd_device *msd = (struct msd_device *)dev; //将传入的设备指针强制类型转换为 MSD 设备结构体指针，方便后续访问。
+    uint8_t response[MSD_RESPONSE_MAX_LEN];//定义一个数组用于存放 SD 卡命令响应数据。
+    rt_err_t result = RT_EOK;//定义并初始化返回值变量，初始为成功。
+    rt_tick_t tick_start; //定义变量用于计时
+    uint32_t OCR;  //（操作电压范围）寄存器值。
+    //调用init时已经 有spi_device了 如果 SPI 设备指针为空，打印错误信息并返回错误码。
+    if (msd->spi_device == RT_NULL)
+    {
+        MSD_DEBUG("[err] the SPI SD device has no SPI!\r\n");
+        return -RT_EIO;
+    }
+
+    /* config spi   配置spi  刚开是的时候只是注册了一个空的spi_device */ 
+    { //配置 SPI 设备为 8 位数据宽度、模式 0、最高速率 400kHz，用于 SD 卡初始化。
+        struct rt_spi_configuration cfg;
+        cfg.data_width = 8;
+        cfg.mode = RT_SPI_MODE_0 | RT_SPI_MSB; /* SPI Compatible Modes 0 */
+        cfg.max_hz = 1000 * 400; /* 400kbit/s */
+        rt_spi_configure(msd->spi_device, &cfg);  //SPI10 配置SPI设备
+    } /* config spi */
+
+    /* init SD card  声明 SPI 消息结构体，尝试获取 SPI 总线所有权，失败则跳转到退出，成功后释放 SPI 设备。*/
+    {
+        struct rt_spi_message message;
+
+        result = MSD_take_owner(msd->spi_device);//spi10  尝试获取 SPI 总线所有权
+
+        if (result != RT_EOK)
+        {
+            goto _exit;
+        }
+
+        rt_spi_release(msd->spi_device); //拉高篇选
+
+        /* The host shall supply power to the card so that the voltage is reached to Vdd_min within 250ms and
+           start to supply at least 74 SD clocks to the SD card with keeping CMD line to high.
+           In case of SPI mode, CS shall be held to high during 74 clock cycles.
+            /* 发送 74 个时钟周期，保证 SD 卡进入 SPI 模式 */
+            
+        {
+            uint8_t send_buffer[100]; /* 100byte > 74 clock   /* 100字节 > 74时钟 */ 
+
+            /* initial message */
+            rt_memset(send_buffer, DUMMY, sizeof(send_buffer));
+            message.send_buf = send_buffer;
+            message.recv_buf = RT_NULL;
+            message.length = sizeof(send_buffer);
+            message.cs_take = message.cs_release = 0;
+
+            /* transfer message   sd发送数据利用的是bus总线下面的  xfer函数*/
+            msd->spi_device->bus->ops->xfer(msd->spi_device, &message);
+        } /* send 74 clock 发送 100 字节的 DUMMY 数据，确保 SD 卡进入 SPI 模式。*/
+
+        /* Send CMD0 (GO_IDLE_STATE) to put MSD in SPI mode 发送 CMD0，令 SD 卡进入 IDLE 状态  */
+        {
+            tick_start = rt_tick_get();
+
+            while (1)  //循环发送 CMD0 命令，直到 SD 卡进入 IDLE 状态或超时。
+            {
+                rt_spi_take(msd->spi_device);
+                result = _send_cmd(msd->spi_device, GO_IDLE_STATE, 0x00, 0x95, response_r1, response);
+                rt_spi_release(msd->spi_device);
+
+                if ((result == RT_EOK) && (response[0] == MSD_IN_IDLE_STATE))
+                {
+                    break;
+                }
+
+                if (rt_tick_timeout(tick_start, rt_tick_from_millisecond(CARD_TRY_TIMES)))
+                {
+                    MSD_DEBUG("[err] SD card goto IDLE mode timeout!\r\n");
+                    result = -RT_ETIMEOUT;
+                    goto _exit;
+                }
+            }
+
+            MSD_DEBUG("[info] SD card goto IDLE mode OK!\r\n");
+        } /* Send CMD0 (GO_IDLE_STATE) to put MSD in SPI mode */
+
+        /* CMD8  发送 CMD8，检测 SD 卡版本和电压兼容性 */
+        {
+            tick_start = rt_tick_get();
+
+            do
+            {
+                rt_spi_take(msd->spi_device);
+                result = _send_cmd(msd->spi_device, SEND_IF_COND, 0x01AA, 0x87, response_r7, response);
+                rt_spi_release(msd->spi_device);
+
+                if (result == RT_EOK)
+                {
+                    MSD_DEBUG("[info] CMD8 response : 0x%02X 0x%02X 0x%02X 0x%02X 0x%02X\r\n",
+                              response[0], response[1], response[2], response[3], response[4]);
+                    //这段代码有问题   并没有检测到其他类型的SD卡
+                    if (response[0] & (1 << 2))
+                    {
+                        /* illegal command, SD V1.x or MMC card */
+                        MSD_DEBUG("[info] CMD8 is illegal command.\r\n");
+                        MSD_DEBUG("[info] maybe Ver1.X SD Memory Card or MMC card!\r\n");
+                        msd->card_type = MSD_CARD_TYPE_SD_V1_X;
+                        break;
+                    }
+                    else
+                    {
+                        /* SD V2.0 or later or SDHC or SDXC memory card! */
+                        MSD_DEBUG("[info] Ver2.00 or later or SDHC or SDXC memory card!\r\n");
+                        msd->card_type = MSD_CARD_TYPE_SD_V2_X;
+                    }
+
+                    if ((0xAA == response[4]) && (0x00 == response[3]))
+                    {
+                        /* SD2.0 not support current voltage */
+                        MSD_DEBUG("[err] VCA = 0, SD2.0 not surpport current operation voltage range\r\n");
+                        result = -RT_ERROR;
+                        goto _exit;
+                    }
+                }
+                else
+                {
+                    if (rt_tick_timeout(tick_start, rt_tick_from_millisecond(200)))
+                    {
+                        MSD_DEBUG("[err] CMD8 SEND_IF_COND timeout!\r\n");
+                        result = -RT_ETIMEOUT;
+                        goto _exit;
+                    }
+                }
+            }
+            while (0xAA != response[4]);
+        } /* CMD8   发送 CMD8 命令，判断卡类型（V1.x 或 V2.x），并检测电压兼容性。*/
+
+        /* Ver1.X SD Memory Card or MMC card 根据卡类型进一步初始化 SD 卡或 MMC 卡 */
+        if (msd->card_type == MSD_CARD_TYPE_SD_V1_X)
+        {
+            rt_bool_t is_sd_v1_x = RT_FALSE;
+            rt_tick_t tick_start;
+
+            /* try SD Ver1.x */
+            while (1)
+            {
+                rt_spi_take(msd->spi_device);
+
+                result = _send_cmd(msd->spi_device, READ_OCR, 0x00, 0x00, response_r3, response);
+                if (result != RT_EOK)
+                {
+                    rt_spi_release(msd->spi_device);
+                    MSD_DEBUG("[info] It maybe SD1.x or MMC But it is Not response to CMD58!\r\n");
+                    goto _exit;
+                }
+
+                if (0 != (response[0] & 0xFE))
+                {
+                    rt_spi_release(msd->spi_device);
+                    MSD_DEBUG("[info] It look CMD58 as illegal command so it is not SD card!\r\n");
+                    break;
+                }
+                rt_spi_release(msd->spi_device);
+
+                OCR = response[1];
+                OCR = (OCR << 8) + response[2];
+                OCR = (OCR << 8) + response[3];
+                OCR = (OCR << 8) + response[4];
+                MSD_DEBUG("[info] OCR is 0x%08X\r\n", OCR);
+
+                if (0 == (OCR & (0x1 << 15)))
+                {
+                    MSD_DEBUG(("[err] SD 1.x But not surpport current voltage\r\n"));
+                    result = -RT_ERROR;
+                    goto _exit;
+                }
+
+                /* --Send ACMD41 to make card ready */
+                tick_start = rt_tick_get();
+
+                /* try CMD55 + ACMD41 */
+                while (1)
+                {
+                    if (rt_tick_timeout(tick_start, rt_tick_from_millisecond(CARD_TRY_TIMES_ACMD41)))
+                    {
+                        rt_spi_release(msd->spi_device);
+                        MSD_DEBUG("[info] try CMD55 + ACMD41 timeout! mabey MMC card!\r\n");
+                        break;
+                    }
+
+                    rt_spi_take(msd->spi_device);
+
+                    /* CMD55 APP_CMD */
+                    result = _send_cmd(msd->spi_device, APP_CMD, 0x00, 0x00, response_r1, response);
+                    if (result != RT_EOK)
+                    {
+                        rt_spi_release(msd->spi_device);
+                        continue;
+                    }
+
+                    if (0 != (response[0] & 0xFE))
+                    {
+                        rt_spi_release(msd->spi_device);
+                        MSD_DEBUG("[info] Not SD card2 , may be MMC\r\n");
+                        break;
+                    }
+
+                    /* ACMD41 SD_SEND_OP_COND */
+                    result = _send_cmd(msd->spi_device, SD_SEND_OP_COND, 0x00, 0x00, response_r1, response);
+                    if (result != RT_EOK)
+                    {
+                        rt_spi_release(msd->spi_device);
+                        continue;
+                    }
+
+                    if (0 != (response[0] & 0xFE))
+                    {
+                        rt_spi_release(msd->spi_device);
+                        MSD_DEBUG("[info] Not SD card4 , may be MMC\r\n");
+                        break;
+                    }
+
+                    if (0 == (response[0] & 0xFF))
+                    {
+                        rt_spi_release(msd->spi_device);
+                        is_sd_v1_x = RT_TRUE;
+                        MSD_DEBUG("[info] It is Ver1.X SD Memory Card!!!\r\n");
+                        break;
+                    }
+                } /* try CMD55 + ACMD41 */
+
+                break;
+            } /* try SD Ver1.x */
+
+            /* try MMC */
+            if (is_sd_v1_x != RT_TRUE)
+            {
+                uint32_t i;
+
+                MSD_DEBUG("[info] try MMC card!\r\n");
+                rt_spi_release(msd->spi_device);
+
+                /* send dummy clock */
+                {
+                    uint8_t send_buffer[100];
+
+                    /* initial message */
+                    rt_memset(send_buffer, DUMMY, sizeof(send_buffer));
+                    message.send_buf = send_buffer;
+                    message.recv_buf = RT_NULL;
+                    message.length = sizeof(send_buffer);
+                    message.cs_take = message.cs_release = 0;
+
+                    for (i = 0; i < 10; i++)
+                    {
+                        /* transfer message */
+                        msd->spi_device->bus->ops->xfer(msd->spi_device, &message);
+                    }
+                } /* send dummy clock */
+
+                /* send CMD0 goto IDLE state */
+                tick_start = rt_tick_get();
+                while (1)
+                {
+                    rt_spi_take(msd->spi_device);
+                    result = _send_cmd(msd->spi_device, GO_IDLE_STATE, 0x00, 0x95, response_r1, response);
+                    rt_spi_release(msd->spi_device);
+
+                    if ((result == RT_EOK) && (response[0] == MSD_IN_IDLE_STATE))
+                    {
+                        break;
+                    }
+
+                    if (rt_tick_timeout(tick_start, rt_tick_from_millisecond(CARD_TRY_TIMES)))
+                    {
+                        MSD_DEBUG("[err] SD card goto IDLE mode timeout!\r\n");
+                        result = -RT_ETIMEOUT;
+                        goto _exit;
+                    }
+                } /* send CMD0 goto IDLE stat */
+
+                /* send CMD1 */
+                tick_start = rt_tick_get();
+                while (1)
+                {
+                    rt_spi_take(msd->spi_device);
+                    result = _send_cmd(msd->spi_device, SEND_OP_COND, 0x00, 0x00, response_r1, response);
+                    rt_spi_release(msd->spi_device);
+
+                    if ((result == RT_EOK) && (response[0] == MSD_RESPONSE_NO_ERROR))
+                    {
+                        MSD_DEBUG("[info] It is MMC card!!!\r\n");
+                        msd->card_type = MSD_CARD_TYPE_MMC;
+                        break;
+                    }
+
+                    if (rt_tick_timeout(tick_start, rt_tick_from_millisecond(CARD_TRY_TIMES)))
+                    {
+                        MSD_DEBUG("[err] SD card goto IDLE mode timeout!\r\n");
+                        result = -RT_ETIMEOUT;
+                        goto _exit;
+                    }
+                } /* send CMD1 */
+            } /* try MMC */
+        }
+        else if (msd->card_type == MSD_CARD_TYPE_SD_V2_X)
+        {
+            rt_spi_take(msd->spi_device);//拉底片选
+
+            result = _send_cmd(msd->spi_device, READ_OCR, 0x00, 0x00, response_r3, response);
+            if (result != RT_EOK)
+            {
+                rt_spi_release(msd->spi_device);
+                MSD_DEBUG("[err] It maybe SD2.0 But it is Not response to CMD58!\r\n");
+                goto _exit;
+            }
+
+            if ((response[0] & 0xFE) != 0)
+            {
+                rt_spi_release(msd->spi_device);
+                MSD_DEBUG("[err] It look CMD58 as illegal command so it is not SD card!\r\n");
+                result = -RT_ERROR;
+                goto _exit;
+            }
+
+            rt_spi_release(msd->spi_device);//拉高片选
+
+            OCR = response[1];
+            OCR = (OCR << 8) + response[2];
+            OCR = (OCR << 8) + response[3];
+            OCR = (OCR << 8) + response[4];
+            MSD_DEBUG("[info] OCR is 0x%08X\r\n", OCR);
+
+            if (0 == (OCR & (0x1 << 15)))
+            {
+                MSD_DEBUG(("[err] SD 1.x But not surpport current voltage\r\n"));
+                result = -RT_ERROR;
+                goto _exit;
+            }
+
+            /* --Send ACMD41 to make card ready */
+            tick_start = rt_tick_get();
+
+            /* try CMD55 + ACMD41 */
+            do
+            {
+                rt_spi_take(msd->spi_device);
+                if (rt_tick_timeout(tick_start, rt_tick_from_millisecond(CARD_TRY_TIMES_ACMD41)))
+                {
+                    rt_spi_release(msd->spi_device);
+                    MSD_DEBUG("[err] SD Ver2.x or later try CMD55 + ACMD41 timeout!\r\n");
+                    result = -RT_ERROR;
+                    goto _exit;
+                }
+
+                /* CMD55 APP_CMD */
+                result = _send_cmd(msd->spi_device, APP_CMD, 0x00, 0x65, response_r1, response);
+//                if((result != RT_EOK) || (response[0] == 0x01))
+                if (result != RT_EOK)
+                {
+                    rt_spi_release(msd->spi_device);
+                    continue;
+                }
+
+                if ((response[0] & 0xFE) != 0)
+                {
+                    rt_spi_release(msd->spi_device);
+                    MSD_DEBUG("[err] Not SD ready!\r\n");
+                    result = -RT_ERROR;
+                    goto _exit;
+                }
+
+                /* ACMD41 SD_SEND_OP_COND */
+                result = _send_cmd(msd->spi_device, SD_SEND_OP_COND, 0x40000000, 0x77, response_r1, response);
+                if (result != RT_EOK)
+                {
+                    rt_spi_release(msd->spi_device);
+                    MSD_DEBUG("[err] ACMD41 fail!\r\n");
+                    result = -RT_ERROR;
+                    goto _exit;
+                }
+
+                if ((response[0] & 0xFE) != 0)
+                {
+                    rt_spi_release(msd->spi_device);
+                    MSD_DEBUG("[info] Not SD card4 , response : 0x%02X\r\n", response[0]);
+//                    break;
+                }
+            }
+            while (response[0] != MSD_RESPONSE_NO_ERROR);
+            rt_spi_release(msd->spi_device);
+            /* try CMD55 + ACMD41 */
+
+            /* --Read OCR again */
+            rt_spi_take(msd->spi_device);
+            result = _send_cmd(msd->spi_device, READ_OCR, 0x00, 0x00, response_r3, response);
+            if (result != RT_EOK)
+            {
+                rt_spi_release(msd->spi_device);
+                MSD_DEBUG("[err] It maybe SD2.0 But it is Not response to 2nd CMD58!\r\n");
+                goto _exit;
+            }
+
+            if ((response[0] & 0xFE) != 0)
+            {
+                rt_spi_release(msd->spi_device);
+                MSD_DEBUG("[err] It look 2nd CMD58 as illegal command so it is not SD card!\r\n");
+                result = -RT_ERROR;
+                goto _exit;
+            }
+            rt_spi_release(msd->spi_device);
+
+            OCR = response[1];
+            OCR = (OCR << 8) + response[2];
+            OCR = (OCR << 8) + response[3];
+            OCR = (OCR << 8) + response[4];
+            MSD_DEBUG("[info] OCR 2nd read is 0x%08X\r\n", OCR);
+
+            if ((OCR & 0x40000000) != 0)
+            {
+                MSD_DEBUG("[info] It is SD2.0 SDHC Card!!!\r\n");
+                msd->card_type = MSD_CARD_TYPE_SD_SDHC;
+            }
+            else
+            {
+                MSD_DEBUG("[info] It is SD2.0 standard capacity Card!!!\r\n");
+            }
+        } /* MSD_CARD_TYPE_SD_V2_X */
+        else
+        {
+            MSD_DEBUG("[err] SD card type unkonw!\r\n");
+            result = -RT_ERROR;
+            goto _exit;
+        }
+    } /* init SD card */
+    ///* 根据卡类型设置读写函数指针 */
+    if (msd->card_type == MSD_CARD_TYPE_SD_SDHC)
+    {
+#ifdef RT_USING_DEVICE_OPS
+        dev->ops   = &msd_sdhc_ops;
+#else
+        dev->read  = rt_msd_sdhc_read;// 如果我的SD卡选的是32G的SD卡  那么就会调用这个函数
+        dev->write = rt_msd_sdhc_write;// 如果我的SD卡选的是32G的SD卡  那么就会调用这个函数
+#endif
+    }
+    else
+    {
+#ifdef RT_USING_DEVICE_OPS
+        dev->ops   = &msd_ops;//两种操作接口
+        /*
+        在 msd_init 函数中，_msd_device.parent.read 和 write 被设置为 RT_NULL，而不是直接设置为 rt_msd_read 和 rt_msd_write，这是因为 RT-Thread 提供了两种设备操作接口的实现方式：传统接口 和 设备操作表（ops）接口。具体原因如下
+        */
+#else
+        dev->read  = rt_msd_read;
+        dev->write = rt_msd_write;
+#endif
+    }
+
+    /* set CRC */
+    {
+        rt_spi_release(msd->spi_device);
+        rt_spi_take(msd->spi_device);
+#ifdef MSD_USE_CRC
+        result = _send_cmd(msd->spi_device, CRC_ON_OFF, 0x01, 0x83, response_r1, response);
+#else
+        result = _send_cmd(msd->spi_device, CRC_ON_OFF, 0x00, 0x91, response_r1, response);
+#endif
+        rt_spi_release(msd->spi_device);
+        if ((result != RT_EOK) || (response[0] != MSD_RESPONSE_NO_ERROR))
+        {
+            MSD_DEBUG("[err] CMD59 CRC_ON_OFF fail! response : 0x%02X\r\n", response[0]);
+            result = -RT_ERROR;
+            goto _exit;
+        }
+    } /* set CRC */
+
+    /* CMD16 SET_BLOCKLEN  扇区大小在初始化时通过 CMD16 命令设置为 SECTOR_SIZE，通常为 512 字节：*/
+    {
+        rt_spi_release(msd->spi_device);
+        rt_spi_take(msd->spi_device);
+        result = _send_cmd(msd->spi_device, SET_BLOCKLEN, SECTOR_SIZE, 0x00, response_r1, response);
+        rt_spi_release(msd->spi_device);
+        if ((result != RT_EOK) || (response[0] != MSD_RESPONSE_NO_ERROR))
+        {
+            MSD_DEBUG("[err] CMD16 SET_BLOCKLEN fail! response : 0x%02X\r\n", response[0]);
+            result = -RT_ERROR;
+            goto _exit;
+        }
+        msd->geometry.block_size = SECTOR_SIZE;
+        msd->geometry.bytes_per_sector = SECTOR_SIZE;
+    }
+
+    /* read CSD */
+    {
+        uint8_t CSD_buffer[MSD_CSD_LEN];
+
+        rt_spi_take(msd->spi_device);
+//        result = _send_cmd(msd->spi_device, SEND_CSD, 0x00, 0xAF, response_r1, response);
+        result = _send_cmd(msd->spi_device, SEND_CSD, 0x00, 0x00, response_r1, response);
+        //_read_block 和 _write_block 函数负责实际的数据传输，但它们并不直接指定扇区号。扇区号已经在调用这些函数之前，通过 _send_cmd 函数发送给了 SD 卡。
+        if (result != RT_EOK)
+        {
+            rt_spi_release(msd->spi_device);
+            MSD_DEBUG("[err] CMD9 SEND_CSD timeout!\r\n");
+            goto _exit;
+        }
+
+        if ((result != RT_EOK) || (response[0] != MSD_RESPONSE_NO_ERROR))
+        {
+            rt_spi_release(msd->spi_device);
+            MSD_DEBUG("[err] CMD9 SEND_CSD fail! response : 0x%02X\r\n", response[0]);
+            result = -RT_ERROR;
+            goto _exit;
+        }
+
+        result = _read_block(msd->spi_device, CSD_buffer, MSD_CSD_LEN);
+        rt_spi_release(msd->spi_device);
+        if (result != RT_EOK)
+        {
+            MSD_DEBUG("[err] read CSD fail!\r\n");
+            goto _exit;
+        }
+
+        /* Analyze CSD */
+        {
+            uint8_t  CSD_STRUCTURE;
+            uint32_t C_SIZE;
+            uint32_t card_capacity;
+
+            uint8_t  tmp8;
+            uint16_t tmp16;
+            uint32_t tmp32;
+
+            /* get CSD_STRUCTURE */
+            tmp8 = CSD_buffer[0] & 0xC0; /* 0b11000000 */
+            CSD_STRUCTURE = tmp8 >> 6;
+
+            /* MMC CSD Analyze. */
+            if (msd->card_type == MSD_CARD_TYPE_MMC)
+            {
+                uint8_t C_SIZE_MULT;
+                uint8_t READ_BL_LEN;
+
+                if (CSD_STRUCTURE > 2)
+                {
+                    MSD_DEBUG("[err] bad CSD Version : %d\r\n", CSD_STRUCTURE);
+                    result = -RT_ERROR;
+                    goto _exit;
+                }
+
+                if (CSD_STRUCTURE == 0)
+                {
+                    MSD_DEBUG("[info] CSD version No. 1.0\r\n");
+                }
+                else if (CSD_STRUCTURE == 1)
+                {
+                    MSD_DEBUG("[info] CSD version No. 1.1\r\n");
+                }
+                else if (CSD_STRUCTURE == 2)
+                {
+                    MSD_DEBUG("[info] CSD version No. 1.2\r\n");
+                }
+
+                /* get TRAN_SPEED 8bit [103:96] */
+                tmp8 = CSD_buffer[3];
+                tmp8 &= 0x03; /* [2:0] transfer rate unit.*/
+                if (tmp8 == 0)
+                {
+                    msd->max_clock = 100 * 1000; /* 0=100kbit/s. */
+                }
+                else if (tmp8 == 1)
+                {
+                    msd->max_clock = 1 * 1000 * 1000; /* 1=1Mbit/s. */
+                }
+                else if (tmp8 == 2)
+                {
+                    msd->max_clock = 10 * 1000 * 1000; /* 2=10Mbit/s. */
+                }
+                else if (tmp8 == 3)
+                {
+                    msd->max_clock = 100 * 1000 * 1000; /* 3=100Mbit/s. */
+                }
+                if (tmp8 == 0)
+                {
+                    MSD_DEBUG("[info] TRAN_SPEED: 0x%02X, %dkbit/s.\r\n", tmp8, msd->max_clock / 1000);
+                }
+                else
+                {
+                    MSD_DEBUG("[info] TRAN_SPEED: 0x%02X, %dMbit/s.\r\n", tmp8, msd->max_clock / 1000 / 1000);
+                }
+
+                /* get READ_BL_LEN 4bit [83:80] */
+                tmp8 = CSD_buffer[5] & 0x0F; /* 0b00001111; */
+                READ_BL_LEN = tmp8;          /* 4 bit */
+                MSD_DEBUG("[info] CSD : READ_BL_LEN : %d %dbyte\r\n", READ_BL_LEN, (1 << READ_BL_LEN));
+
+                /* get C_SIZE 12bit [73:62] */
+                tmp16 = CSD_buffer[6] & 0x03; /* get [73:72] 0b00000011 */
+                tmp16 = tmp16 << 8;
+                tmp16 += CSD_buffer[7];       /* get [71:64] */
+                tmp16 = tmp16 << 2;
+                tmp8 = CSD_buffer[8] & 0xC0;  /* get [63:62] 0b11000000 */
+                tmp8 = tmp8 >> 6;
+                tmp16 = tmp16 + tmp8;
+                C_SIZE = tmp16;             //12 bit
+                MSD_DEBUG("[info] CSD : C_SIZE : %d\r\n", C_SIZE);
+
+                /* get C_SIZE_MULT 3bit [49:47] */
+                tmp8 = CSD_buffer[9] & 0x03;//0b00000011;
+                tmp8 = tmp8 << 1;
+                tmp8 = tmp8 + ((CSD_buffer[10] & 0x80/*0b10000000*/) >> 7);
+                C_SIZE_MULT = tmp8;         // 3 bit
+                MSD_DEBUG("[info] CSD : C_SIZE_MULT : %d\r\n", C_SIZE_MULT);
+
+                /* memory capacity = BLOCKNR * BLOCK_LEN */
+                /* BLOCKNR = (C_SIZE+1) * MULT */
+                /* MULT = 2^(C_SIZE_MULT+2) */
+                /* BLOCK_LEN = 2^READ_BL_LEN */
+                card_capacity = (1 << READ_BL_LEN) * ((C_SIZE + 1) * (1 << (C_SIZE_MULT + 2)));
+                msd->geometry.sector_count = card_capacity / msd->geometry.bytes_per_sector;
+                MSD_DEBUG("[info] card capacity : %d Mbyte\r\n", card_capacity / (1024 * 1024));
+            }
+            else /* SD CSD Analyze. */
+            {
+                if (CSD_STRUCTURE == 0)
+                {
+                    uint8_t C_SIZE_MULT;
+                    uint8_t READ_BL_LEN;
+
+                    MSD_DEBUG("[info] CSD Version 1.0\r\n");
+
+                    /* get TRAN_SPEED 8bit [103:96] */
+                    tmp8 = CSD_buffer[3];
+                    if (tmp8 == 0x32)
+                    {
+                        msd->max_clock = 1000 * 1000 * 10; /* 10Mbit/s. */
+                    }
+                    else if (tmp8 == 0x5A)
+                    {
+                        msd->max_clock = 1000 * 1000 * 50; /* 50Mbit/s. */
+                    }
+                    else
+                    {
+                        msd->max_clock = 1000 * 1000 * 1; /* 1Mbit/s default. */
+                    }
+                    MSD_DEBUG("[info] TRAN_SPEED: 0x%02X, %dMbit/s.\r\n", tmp8, msd->max_clock / 1000 / 1000);
+
+                    /* get READ_BL_LEN 4bit [83:80] */
+                    tmp8 = CSD_buffer[5] & 0x0F; /* 0b00001111; */
+                    READ_BL_LEN = tmp8;          /* 4 bit */
+                    MSD_DEBUG("[info] CSD : READ_BL_LEN : %d %dbyte\r\n", READ_BL_LEN, (1 << READ_BL_LEN));
+
+                    /* get C_SIZE 12bit [73:62] */
+                    tmp16 = CSD_buffer[6] & 0x03; /* get [73:72] 0b00000011 */
+                    tmp16 = tmp16 << 8;
+                    tmp16 += CSD_buffer[7];       /* get [71:64] */
+                    tmp16 = tmp16 << 2;
+                    tmp8 = CSD_buffer[8] & 0xC0;  /* get [63:62] 0b11000000 */
+                    tmp8 = tmp8 >> 6;
+                    tmp16 = tmp16 + tmp8;
+                    C_SIZE = tmp16;             //12 bit
+                    MSD_DEBUG("[info] CSD : C_SIZE : %d\r\n", C_SIZE);
+
+                    /* get C_SIZE_MULT 3bit [49:47] */
+                    tmp8 = CSD_buffer[9] & 0x03;//0b00000011;
+                    tmp8 = tmp8 << 1;
+                    tmp8 = tmp8 + ((CSD_buffer[10] & 0x80/*0b10000000*/) >> 7);
+                    C_SIZE_MULT = tmp8;         // 3 bit
+                    MSD_DEBUG("[info] CSD : C_SIZE_MULT : %d\r\n", C_SIZE_MULT);
+
+                    /* memory capacity = BLOCKNR * BLOCK_LEN */
+                    /* BLOCKNR = (C_SIZE+1) * MULT */
+                    /* MULT = 2^(C_SIZE_MULT+2) */
+                    /* BLOCK_LEN = 2^READ_BL_LEN */
+                    card_capacity = (1 << READ_BL_LEN) * ((C_SIZE + 1) * (1 << (C_SIZE_MULT + 2)));
+                    msd->geometry.sector_count = card_capacity / msd->geometry.bytes_per_sector;
+                    MSD_DEBUG("[info] card capacity : %d Mbyte\r\n", card_capacity / (1024 * 1024));
+                }
+                else if (CSD_STRUCTURE == 1)
+                {
+                    MSD_DEBUG("[info] CSD Version 2.0\r\n");
+
+                    /* get TRAN_SPEED 8bit [103:96] */
+                    tmp8 = CSD_buffer[3];
+                    if (tmp8 == 0x32)
+                    {
+                        msd->max_clock = 1000 * 1000 * 10; /* 10Mbit/s. */
+                    }
+                    else if (tmp8 == 0x5A)
+                    {
+                        msd->max_clock = 1000 * 1000 * 50; /* 50Mbit/s. */  // 320 * 240 * 16 =40.69   
+                    }
+                    else if (tmp8 == 0x0B)
+                    {
+                        msd->max_clock = 1000 * 1000 * 100; /* 100Mbit/s. */
+                        /* UHS50 Card sets TRAN_SPEED to 0Bh (100Mbit/sec), */
+                        /* for both SDR50 and DDR50 modes. */
+                    }
+                    else if (tmp8 == 0x2B)
+                    {
+                        msd->max_clock = 1000 * 1000 * 200; /* 200Mbit/s. */
+                        /* UHS104 Card sets TRAN_SPEED to 2Bh (200Mbit/sec). */
+                    }
+                    else
+                    {
+                        msd->max_clock = 1000 * 1000 * 1; /* 1Mbit/s default. */
+                    }
+                    MSD_DEBUG("[info] TRAN_SPEED: 0x%02X, %dMbit/s.\r\n", tmp8, msd->max_clock / 1000 / 1000);
+
+                    /* get C_SIZE 22bit [69:48] */
+                    tmp32 = CSD_buffer[7] & 0x3F; /* 0b00111111 */
+                    tmp32 = tmp32 << 8;
+                    tmp32 += CSD_buffer[8];
+                    tmp32 = tmp32 << 8;
+                    tmp32 += CSD_buffer[9];
+                    C_SIZE = tmp32;
+                    MSD_DEBUG("[info] CSD : C_SIZE : %d\r\n", C_SIZE);
+
+                    /* memory capacity = (C_SIZE+1) * 512K byte */
+                    card_capacity = (C_SIZE + 1) / 2; /* unit : Mbyte */
+                    msd->geometry.sector_count = (C_SIZE + 1) * 1024; /* 512KB = 1024sector */
+                    MSD_DEBUG("[info] card capacity : %d.%d Gbyte\r\n", card_capacity / 1024, (card_capacity % 1024) * 100 / 1024);
+                    MSD_DEBUG("[info] sector_count : %d\r\n", msd->geometry.sector_count);
+                }
+                else
+                {
+                    MSD_DEBUG("[err] bad CSD Version : %d\r\n", CSD_STRUCTURE);
+                    result = -RT_ERROR;
+                    goto _exit;
+                }
+            } /* SD CSD Analyze. */
+        } /* Analyze CSD */
+
+    } /* read CSD */
+
+    /* config spi to high speed */
+    {
+        struct rt_spi_configuration cfg;
+        cfg.data_width = 8;
+        cfg.mode = RT_SPI_MODE_0 | RT_SPI_MSB; /* SPI Compatible Modes 0 */
+        cfg.max_hz = msd->max_clock;
+        rt_spi_configure(msd->spi_device, &cfg);
+    } /* config spi */
+
+_exit:
+    rt_spi_release(msd->spi_device);
+    rt_mutex_release(&(msd->spi_device->bus->lock));
+    return result;
+}
+
+static rt_err_t rt_msd_open(rt_device_t dev, rt_uint16_t oflag)
+{
+//    struct msd_device * msd = (struct msd_device *)dev;
+    return RT_EOK;
+}
+
+static rt_err_t rt_msd_close(rt_device_t dev)
+{
+//    struct msd_device * msd = (struct msd_device *)dev;
+    return RT_EOK;
+}
+
+//main函数中通过fprint  fget等函数本质上会调用 MSD驱动的的read函数，然后调用rt_msd_read->根据单块还是多块调用_read_block(),多块->read_blocks()
+static rt_ssize_t rt_msd_read(rt_device_t dev, rt_off_t pos, void *buffer, rt_size_t size)
+{//pos是逻辑块号  是FATS文件系统计算出来给的
+    struct msd_device *msd = (struct msd_device *)dev;
+    uint8_t response[MSD_RESPONSE_MAX_LEN];
+    rt_err_t result = RT_EOK;
+    //在多设备共享同一个 SPI 总线时，每个设备通信前都需要确保总线已按自己的参数配置，并且自己是 owner，防止配置冲突。
+    result = MSD_take_owner(msd->spi_device);
+
+    if (result != RT_EOK)
+    {
+        goto _exit;
+    }
+
+    /* SINGLE_BLOCK?读单个块 */
+    if (size == 1)
+    {
+        //拉低片选引脚
+        rt_spi_take(msd->spi_device);
+        //发送读单块命令   pos（逻辑块号）被直接乘以 msd->geometry.bytes_per_sector，从而转换为物理扇区的起始地址（以字节为单位）。这是因为 SD 卡的操作是以扇区为单位的，而每个扇区的大小由 msd->geometry.bytes_per_sector 指定。
+        result = _send_cmd(msd->spi_device, READ_SINGLE_BLOCK, pos * msd->geometry.bytes_per_sector, 0x00, response_r1, response);
+        if ((result != RT_EOK) || (response[0] != MSD_RESPONSE_NO_ERROR))
+        {
+            MSD_DEBUG("[err] read SINGLE_BLOCK #%d fail!\r\n", pos);
+            size = 0;
+            goto _exit;
+        }
+        //从哪个位置开始读 ？ 
+        result = _read_block(msd->spi_device, buffer, msd->geometry.bytes_per_sector);
+        if (result != RT_EOK)
+        {
+            MSD_DEBUG("[err] read SINGLE_BLOCK #%d fail!\r\n", pos);
+            size = 0;
+        }
+    }
+    else if (size > 1)
+    {
+        uint32_t i;
+
+        rt_spi_take(msd->spi_device);
+
+        result = _send_cmd(msd->spi_device, READ_MULTIPLE_BLOCK, pos * msd->geometry.bytes_per_sector, 0x00, response_r1, response);
+        if ((result != RT_EOK) || (response[0] != MSD_RESPONSE_NO_ERROR))
+        {
+            MSD_DEBUG("[err] read READ_MULTIPLE_BLOCK #%d fail!\r\n", pos);
+            size = 0;
+            goto _exit;
+        }
+
+        for (i = 0; i < size; i++)
+        {
+            result = _read_block(msd->spi_device,
+                                 (uint8_t *)buffer + msd->geometry.bytes_per_sector * i,
+                                 msd->geometry.bytes_per_sector);
+            if (result != RT_EOK)
+            {
+                MSD_DEBUG("[err] read READ_MULTIPLE_BLOCK #%d fail!\r\n", pos);
+                size = i;
+                break;
+            }
+        }
+
+        /* send CMD12 stop transfer */
+        result = _send_cmd(msd->spi_device, STOP_TRANSMISSION, 0x00, 0x00, response_r1b, response);
+        if (result != RT_EOK)
+        {
+            MSD_DEBUG("[err] read READ_MULTIPLE_BLOCK, send stop token fail!\r\n");
+        }
+    } /* READ_MULTIPLE_BLOCK */
+
+_exit:
+    /* release and exit */
+    rt_spi_release(msd->spi_device);
+    rt_mutex_release(&(msd->spi_device->bus->lock));
+
+    return size;
+}
+
+//高速卡read  write  2G~32G 它用于通过 SPI 方式从 SDHC 卡读取数据块。下面是逐行解释：参数分别为设备指针、起始块号、数据缓冲区和要读取的块数，返回实际读取的块数。
+static rt_ssize_t rt_msd_sdhc_read(rt_device_t dev, rt_off_t pos, void *buffer, rt_size_t size)
+{
+    //将设备指针强制类型转换为 MSD 设备结构体指针，方便后续访问设备信息。
+    struct msd_device *msd = (struct msd_device *)dev;
+    //定义用于存放 SD 卡响应的缓冲区和操作结果变量。
+    uint8_t response[MSD_RESPONSE_MAX_LEN];
+    rt_err_t result = RT_EOK;
+    //在多设备共享同一个 SPI 总线时，每个设备通信前都需要确保总线已按自己的参数配置，并且自己是 owner，防止配置冲突。
+    result = MSD_take_owner(msd->spi_device);
+
+    if (result != RT_EOK)
+    {
+        goto _exit;
+    }
+
+    /* SINGLE_BLOCK? 如果只读一个块，先拉低片选，发送读单块命令，检查响应是否正常，然后读取数据块到缓冲区。如果失败则 size 置为 0。*/
+    if (size == 1)
+    {
+        rt_spi_take(msd->spi_device);  //rt_spi_take 用于开始一次 SPI 设备的通信前，拉低片选信号，确保后续的数据传输针对目标设备。
+
+        result = _send_cmd(msd->spi_device, READ_SINGLE_BLOCK, pos, 0x00, response_r1, response);
+        if ((result != RT_EOK) || (response[0] != MSD_RESPONSE_NO_ERROR))
+        {
+            MSD_DEBUG("[err] read SINGLE_BLOCK #%d fail!\r\n", pos);
+            size = 0;
+            goto _exit;
+        }
+        //然后读取数据块到缓冲区。
+        result = _read_block(msd->spi_device, buffer, msd->geometry.bytes_per_sector);
+        if (result != RT_EOK)
+        {
+            MSD_DEBUG("[err] read SINGLE_BLOCK #%d fail!\r\n", pos);
+            size = 0;
+        }
+    }
+    //如果读的块数大于1，则需要使用多块读取。
+    else if (size > 1)
+    {
+        uint32_t i;
+        //拉低片选
+        rt_spi_take(msd->spi_device);
+        //发送读多块的指令
+        result = _send_cmd(msd->spi_device, READ_MULTIPLE_BLOCK, pos, 0x00, response_r1, response);
+        //检查响应。
+        if ((result != RT_EOK) || (response[0] != MSD_RESPONSE_NO_ERROR))
+        {
+            MSD_DEBUG("[err] read READ_MULTIPLE_BLOCK #%d fail!\r\n", pos);
+            size = 0;
+            goto _exit;
+        }
+        //循环读取每个块的数据到缓冲区。
+        for (i = 0; i < size; i++)
+        {
+            result = _read_block(msd->spi_device,
+                                 (uint8_t *)buffer + msd->geometry.bytes_per_sector * i,
+                                 msd->geometry.bytes_per_sector);
+                                 //如果某块读取失败，size 记录已成功读取的块数并跳出循环。
+            if (result != RT_EOK)
+            {
+                MSD_DEBUG("[err] read READ_MULTIPLE_BLOCK #%d fail!\r\n", pos);
+                size = i;
+                break;
+            }
+        }
+
+        /* send CMD12 stop transfer  最后发送停止传输命令（CMD12），结束多块读取。 */
+        result = _send_cmd(msd->spi_device, STOP_TRANSMISSION, 0x00, 0x00, response_r1b, response);
+        if (result != RT_EOK)
+        {
+            MSD_DEBUG("[err] read READ_MULTIPLE_BLOCK, send stop token fail!\r\n");
+        }
+    } /* READ_MULTIPLE_BLOCK */
+
+_exit:
+    /* release and exit */
+    rt_spi_release(msd->spi_device);//拉高片选引脚
+    rt_mutex_release(&(msd->spi_device->bus->lock)); //释放 SPI 总线锁，允许其他设备访问。
+
+    return size;
+}
+
+static rt_ssize_t rt_msd_write(rt_device_t dev, rt_off_t pos, const void *buffer, rt_size_t size)
+{
+    struct msd_device *msd = (struct msd_device *)dev;
+    uint8_t response[MSD_RESPONSE_MAX_LEN];
+    rt_err_t result;
+
+    result = MSD_take_owner(msd->spi_device);
+
+    if (result != RT_EOK)
+    {
+        MSD_DEBUG("[err] get SPI owner fail!\r\n");
+        goto _exit;
+    }
+
+
+    /* SINGLE_BLOCK? */
+    if (size == 1)
+    {
+        rt_spi_take(msd->spi_device);
+        result = _send_cmd(msd->spi_device, WRITE_BLOCK, pos * msd->geometry.bytes_per_sector, 0x00, response_r1, response);
+        if ((result != RT_EOK) || (response[0] != MSD_RESPONSE_NO_ERROR))
+        {
+            MSD_DEBUG("[err] CMD WRITE_BLOCK fail!\r\n");
+            size = 0;
+            goto _exit;
+        }
+
+        result = _write_block(msd->spi_device, buffer, msd->geometry.bytes_per_sector, MSD_TOKEN_WRITE_SINGLE_START);
+        if (result != RT_EOK)
+        {
+            MSD_DEBUG("[err] write SINGLE_BLOCK #%d fail!\r\n", pos);
+            size = 0;
+        }
+    }
+    else if (size > 1)
+    {
+        struct rt_spi_message message;
+        uint32_t i;
+
+        rt_spi_take(msd->spi_device);
+
+#ifdef MSD_USE_PRE_ERASED
+        if (msd->card_type != MSD_CARD_TYPE_MMC)
+        {
+            /* CMD55 APP_CMD */
+            result = _send_cmd(msd->spi_device, APP_CMD, 0x00, 0x00, response_r1, response);
+            if ((result != RT_EOK) || (response[0] != MSD_RESPONSE_NO_ERROR))
+            {
+                MSD_DEBUG("[err] CMD55 APP_CMD fail!\r\n");
+                size = 0;
+                goto _exit;
+            }
+
+            /* ACMD23 Pre-erased */
+            result = _send_cmd(msd->spi_device, SET_WR_BLK_ERASE_COUNT, size, 0x00, response_r1, response);
+            if ((result != RT_EOK) || (response[0] != MSD_RESPONSE_NO_ERROR))
+            {
+                MSD_DEBUG("[err] ACMD23 SET_BLOCK_COUNT fail!\r\n");
+                size = 0;
+                goto _exit;
+            }
+        }
+#endif
+
+        result = _send_cmd(msd->spi_device, WRITE_MULTIPLE_BLOCK, pos * msd->geometry.bytes_per_sector, 0x00, response_r1, response);
+        if ((result != RT_EOK) || (response[0] != MSD_RESPONSE_NO_ERROR))
+        {
+            MSD_DEBUG("[err] CMD WRITE_MULTIPLE_BLOCK fail!\r\n");
+            size = 0;
+            goto _exit;
+        }
+
+        /* write all block */
+        for (i = 0; i < size; i++)
+        {
+            result = _write_block(msd->spi_device,
+                                  (const uint8_t *)buffer + msd->geometry.bytes_per_sector * i,
+                                  msd->geometry.bytes_per_sector,
+                                  MSD_TOKEN_WRITE_MULTIPLE_START);
+            if (result != RT_EOK)
+            {
+                MSD_DEBUG("[err] write SINGLE_BLOCK #%d fail!\r\n", pos);
+                size = i;
+                break;
+            }
+        } /* write all block */
+
+        /* send stop token */
+        {
+            uint8_t send_buffer[18];
+
+            rt_memset(send_buffer, DUMMY, sizeof(send_buffer));
+            send_buffer[sizeof(send_buffer) - 1] = MSD_TOKEN_WRITE_MULTIPLE_STOP;
+
+            /* initial message */
+            message.send_buf = send_buffer;
+            message.recv_buf = RT_NULL;
+            message.length = sizeof(send_buffer);
+            message.cs_take = message.cs_release = 0;
+
+            /* transfer message */
+            msd->spi_device->bus->ops->xfer(msd->spi_device, &message);
+        }
+
+        /* wait ready */
+        result = _wait_ready(msd->spi_device);
+        if (result != RT_EOK)
+        {
+            MSD_DEBUG("[warning] wait WRITE_MULTIPLE_BLOCK stop token ready timeout!\r\n");
+        }
+    } /* size > 1 */
+
+_exit:
+    /* release and exit */
+    rt_spi_release(msd->spi_device);
+    rt_mutex_release(&(msd->spi_device->bus->lock));
+
+    return size;
+}
+
+//高内存卡写函数   
+static rt_ssize_t rt_msd_sdhc_write(rt_device_t dev, rt_off_t pos, const void *buffer, rt_size_t size)
+{//定义 SDHC 卡写函数，参数为设备指针、写入起始块号、数据缓冲区和块数量，返回实际写入的块数。
+    struct msd_device *msd = (struct msd_device *)dev;
+    //定义用于存放 SD 卡响应的缓冲区和操作结果变量。
+    uint8_t response[MSD_RESPONSE_MAX_LEN];
+    rt_err_t result;
+    //获取 SPI 设备的所有权，确保在多设备共享同一 SPI 总线时，当前设备可以安全地进行通信。
+    result = MSD_take_owner(msd->spi_device);
+
+    if (result != RT_EOK)
+    {
+        //如果获取总线失败，则跳转到退出处理，释放资源。
+        goto _exit;
+    }
+
+    /* SINGLE_BLOCK?  写一个快*/
+    if (size == 1)
+    {
+        ////拉低引脚
+        rt_spi_take(msd->spi_device); 
+        //发送写单块命令
+        result = _send_cmd(msd->spi_device, WRITE_BLOCK, pos, 0x00, response_r1, response);
+        //检查响应是否正常
+        if ((result != RT_EOK) || (response[0] != MSD_RESPONSE_NO_ERROR))
+        {
+            MSD_DEBUG("[err] CMD WRITE_BLOCK fail!\r\n");
+            size = 0;
+            goto _exit;
+        }
+        //然后写入数据块
+        result = _write_block(msd->spi_device, buffer, msd->geometry.bytes_per_sector, MSD_TOKEN_WRITE_SINGLE_START);
+        //如果失败则 size 置为 0。
+        if (result != RT_EOK)
+        {
+            MSD_DEBUG("[err] write SINGLE_BLOCK #%d fail!\r\n", pos);
+            size = 0;
+        }
+    }
+    else if (size > 1) //写多个块
+    {
+        struct rt_spi_message message;
+        uint32_t i;
+
+        rt_spi_take(msd->spi_device); //拉低
+
+#ifdef MSD_USE_PRE_ERASED
+        /* CMD55 APP_CMD  如果定义了 MSD_USE_PRE_ERASED，先发送预擦除相关命令（CMD55 和 ACMD23），提高写入效率。失败则 size 置为 0 并退出。 */
+        result = _send_cmd(msd->spi_device, APP_CMD, 0x00, 0x00, response_r1, response);
+        if ((result != RT_EOK) || (response[0] != MSD_RESPONSE_NO_ERROR))
+        {
+            MSD_DEBUG("[err] CMD55 APP_CMD fail!\r\n");
+            size = 0;
+            goto _exit;
+        }
+
+        /* ACMD23 Pre-erased   如果定义了 MSD_USE_PRE_ERASED，先发送预擦除相关命令（CMD55 和 ACMD23），提高写入效率。失败则 size 置为 0 并退出。*/
+        result = _send_cmd(msd->spi_device, SET_WR_BLK_ERASE_COUNT, size, 0x00, response_r1, response);
+        if ((result != RT_EOK) || (response[0] != MSD_RESPONSE_NO_ERROR))
+        {
+            MSD_DEBUG("[err] ACMD23 SET_BLOCK_COUNT fail!\r\n");
+            size = 0;
+            goto _exit;
+        }
+#endif
+        //发送写多块命令
+        result = _send_cmd(msd->spi_device, WRITE_MULTIPLE_BLOCK, pos, 0x00, response_r1, response);
+        //检查响应是否正常
+        if ((result != RT_EOK) || (response[0] != MSD_RESPONSE_NO_ERROR))
+        {
+            MSD_DEBUG("[err] CMD WRITE_MULTIPLE_BLOCK fail!\r\n");
+            size = 0;
+            goto _exit;
+        }
+
+        /* write all block  循环写入每个数据块到 SD 卡。如果某块写入失败，size 记录已成功写入的块数并跳出循环。*/
+        for (i = 0; i < size; i++)
+        {
+            result = _write_block(msd->spi_device,
+                                  (const uint8_t *)buffer + msd->geometry.bytes_per_sector * i,
+                                  msd->geometry.bytes_per_sector,
+                                  MSD_TOKEN_WRITE_MULTIPLE_START);
+            if (result != RT_EOK)
+            {
+                MSD_DEBUG("[err] write MULTIPLE_BLOCK #%d fail!\r\n", pos);
+                size = i;
+                break;
+            }
+        } /* write all block */
+
+        /* send stop token  写完所有块后，发送停止令牌（stop token），通知 SD 卡结束多块写入。*/
+        {
+            uint8_t send_buffer[18];
+
+            rt_memset(send_buffer, DUMMY, sizeof(send_buffer));
+            send_buffer[sizeof(send_buffer) - 1] = MSD_TOKEN_WRITE_MULTIPLE_STOP;
+
+            /* initial message */
+            message.send_buf = send_buffer;
+            message.recv_buf = RT_NULL;
+            message.length = sizeof(send_buffer);
+            message.cs_take = message.cs_release = 0;
+
+            /* transfer message */
+            msd->spi_device->bus->ops->xfer(msd->spi_device, &message);
+        }
+        //等待 SD 卡写入完成并准备好，超时则打印警告。
+        result = _wait_ready(msd->spi_device);
+        if (result != RT_EOK)
+        {
+            MSD_DEBUG("[warning] wait WRITE_MULTIPLE_BLOCK stop token ready timeout!\r\n");
+        }
+    } /* size > 1 */
+
+_exit:
+    /* release and exit 退出处理，释放 SPI 设备和总线锁，返回实际写入的块数。*/
+    rt_spi_release(msd->spi_device);
+    rt_mutex_release(&(msd->spi_device->bus->lock));
+
+    return size;
+}
+
+//rt_msd_control 函数，它是 MSD（SPI SD卡）设备的控制接口，主要用于获取设备的几何信息。
+static rt_err_t rt_msd_control(rt_device_t dev, int cmd, void *args)
+{ //定义 MSD 设备的控制函数，参数为设备指针、命令类型和参数指针
+
+    struct msd_device *msd = (struct msd_device *)dev;
+
+    RT_ASSERT(dev != RT_NULL);//断言设备指针不为空，防止后续访问空指针导致程序崩溃。
+
+    if (cmd == RT_DEVICE_CTRL_BLK_GETGEOME) //判断命令类型是否为获取块设备几何信息（如扇区大小、块大小、总扇区数）。
+    {
+        struct rt_device_blk_geometry *geometry;//声明一个块设备几何结构体指针。
+
+        geometry = (struct rt_device_blk_geometry *)args;//将参数指针强制类型转换为块设备几何结构体指针。
+        if (geometry == RT_NULL) return -RT_ERROR;
+        /*
+        将 MSD 设备的扇区字节数、块大小和扇区总数赋值给传入的结构体，用于外部查询设备容量和参数。
+        */
+        geometry->bytes_per_sector = msd->geometry.bytes_per_sector;
+        geometry->block_size = msd->geometry.block_size;
+        geometry->sector_count = msd->geometry.sector_count;
+    }
+
+    return RT_EOK;
+}
+
+
+//这个函数并没有定义 sd0所有的函数  只有调用  rt_devic_init("std0")时才会调用这个函数  而下面的函数只是说注册一个msd设备使用spi10
+//具体的初始化函数还是得调用  rt_device_init(dev);这个时候才会真正执行 rt_msd_init() 的全部初始化流程（例如识别 SD 卡、初始化 SPI 协议、建立扇区信息）。
+rt_err_t msd_init(const char *sd_device_name, const char *spi_device_name)
+{
+    rt_err_t result = RT_EOK;
+    struct rt_spi_device *spi_device;//声明SPI设备指针
+    /*通过SPI设备名  sd0查找SPI设备   ，并强制类型转换为 rt_spi_device */
+    spi_device = (struct rt_spi_device *)rt_device_find(spi_device_name);
+    if (spi_device == RT_NULL)
+    {
+        MSD_DEBUG("spi device %s not found!\r\n", spi_device_name);
+        return -RT_ENOSYS;
+    }
+    /*将 _msd_device 结构体的所有成员清零，初始化 MSD 设备结构体。 */
+    rt_memset(&_msd_device, 0, sizeof(_msd_device));
+    //将找到的 SPI 设备指针赋值给 MSD 设备结构体的 spi_device 字段。
+    _msd_device.spi_device = spi_device;
+
+    /* register sdcard device  设置 MSD 设备的类型为块设备（Block Device）。*/
+    _msd_device.parent.type    = RT_Device_Class_Block;
+    /*初始化 MSD 设备的几何参数（扇区字节数、扇区数量、块大小）为 0*/
+    _msd_device.geometry.bytes_per_sector = 0;
+    _msd_device.geometry.sector_count = 0;
+    _msd_device.geometry.block_size = 0;
+
+#ifdef RT_USING_DEVICE_OPS
+    _msd_device.parent.ops     = &msd_ops;
+#else
+/*
+也就是说：你定义了一个“SPI SD 卡设备”，它自己实现了 init/open/close/control 等接口，而不是去使用 spi_device 的。
+❓那为啥 spi_device 里也有 parent，却不用它的 open/read？
+因为：
+
+🧩 spi_device 是“底层通信设备”
+它是 SPI 总线上的一个从设备，提供 低层通信能力；
+
+它的 parent（也就是 rt_device）只是用来注册 SPI 总线设备，不表示存储设备。
+
+你用它的 open/read 是发字节，不是读文件扇区。    
+    _msd_device.parent.init    = rt_msd_init;
+    _msd_device.parent.open    = rt_msd_open;
+    _msd_device.parent.close   = rt_msd_close;
+    _msd_device.parent.read    = RT_NULL;
+    _msd_device.parent.write   = RT_NULL;
+    _msd_device.parent.control = rt_msd_control;  
+    这个parent是rt_device   
+我不理解 为什么是parent中的open read等函数，rt_spi_device 中 也有parent  为什么不用它里面的open  read  等函数
+
+_msd_device  是 spi_msd类型的设备  static struct msd_device  _msd_device;
+struct msd_device
+{
+    struct rt_device                parent;    // // 是一个“块设备”类型  含有 rt_device(open read write parent) 
+    struct rt_device_blk_geometry   geometry;    
+    struct rt_spi_device *          spi_device; // SPI 总线设备（本质上也是一个 rt_device）  //也含有 rt_device（open/read/write），rt_spi_bus（config/xtransfer），config，cs_pin,user_data
+    msd_card_type                   card_type;   
+    uint32_t                        max_clock;   
+};  
+🧱 msd_device 是“块设备”
+它是一种 逻辑上的块设备（磁盘）；
+它内部通过 SPI 驱动控制 SD 卡，但对外表现为 /dev/sd0、/ 挂载点；
+它必须实现 init/open/close/control 等函数以支持 dfs_mount、read(), write() 这样的操作。
+🔍 所以它是高层块设备，必须用你 msd_device 中 parent 的函数表。
+*/
+    _msd_device.parent.init    = rt_msd_init;
+    _msd_device.parent.open    = rt_msd_open;
+    _msd_device.parent.close   = rt_msd_close;
+    _msd_device.parent.read    = RT_NULL;
+    _msd_device.parent.write   = RT_NULL;
+    _msd_device.parent.control = rt_msd_control;
+#endif
+
+    /* no private, no callback */
+    _msd_device.parent.user_data = RT_NULL;
+    _msd_device.parent.rx_indicate = RT_NULL;
+    _msd_device.parent.tx_complete = RT_NULL;
+
+
+    /*
+        //在注册过程中，rt_device_register 会将 MSD 设备的初始化函数 rt_msd_init 绑定到设备的 init 回调中。
+        rt_device_register 将 MSD 设备注册到 RT-Thread 的设备管理框架中。
+        此时，rt_msd_init 函数并不会立即被调用。
+        rt_msd_init 会在调用 rt_device_init() 时被触发。rt_device_init() 是 RT-Thread 设备框架中用于初始化设备的函数。
+    */
+    result = rt_device_register(&_msd_device.parent, sd_device_name,
+                                RT_DEVICE_FLAG_RDWR | RT_DEVICE_FLAG_REMOVABLE | RT_DEVICE_FLAG_STANDALONE);
+            //设备是可移除的，比如 SD 卡、U 盘等，系统会认为它不是永久固定的设备。
+            //设备是独立的，不依赖其他设备（比如不是挂载在某个父设备下），通常用于单独工作的设备。
+    return result;
+}
+
+~~~
+
+
+
+ 请你解释一下，我为SD卡注册为SD设备的过程，以及写入数据和读出数据的整个流程，包括驱动的流程。请你仔细讲解
+
+##### 📋 RT-Thread SPI SD卡完整流程详解
+
+###### 🏗️ 1. 设备注册流程
+
+第一步：SPI设备注册
+
+```c
+// 在BSP初始化中，首先注册SPI总线和设备
+rt_hw_spi_device_attach("spi1", "spi10", CS_PIN);  // 注册SPI设备"spi10"
+```
+
+第二步：MSD设备注册
+
+```c
+// 应用层调用msd_init()函数
+msd_init("sd0", "spi10");  // 将SD卡注册为"sd0"设备，使用"spi10"作为底层通信
+
+// msd_init()内部流程：
+static struct msd_device _msd_device;  // 全局MSD设备结构
+
+rt_err_t msd_init(const char *sd_device_name, const char *spi_device_name) {
+    // 1. 查找SPI设备
+    spi_device = (struct rt_spi_device *)rt_device_find(spi_device_name);
+    
+    // 2. 初始化MSD设备结构
+    _msd_device.spi_device = spi_device;  // 关联SPI设备
+    _msd_device.parent.type = RT_Device_Class_Block;  // 设置为块设备
+    
+    // 3. 设置设备操作函数
+    _msd_device.parent.init = rt_msd_init;      // 初始化函数
+    _msd_device.parent.open = rt_msd_open;      // 打开函数  
+    _msd_device.parent.close = rt_msd_close;    // 关闭函数
+    _msd_device.parent.control = rt_msd_control; // 控制函数
+    
+    // 4. 注册到RT-Thread设备框架
+    rt_device_register(&_msd_device.parent, "sd0", 
+                      RT_DEVICE_FLAG_RDWR | RT_DEVICE_FLAG_REMOVABLE);
+}
+```
+
+###### 🔧 2. 设备初始化流程
+
+实际初始化时机
+
+```c
+// 应用层调用
+rt_device_init(device);  // 这时才真正调用rt_msd_init()
+
+static rt_err_t rt_msd_init(rt_device_t dev) {
+    // 1. 配置SPI参数
+    struct rt_spi_configuration cfg;
+    cfg.data_width = 8;
+    cfg.mode = RT_SPI_MODE_0 | RT_SPI_MSB;
+    cfg.max_hz = 400000;  // 初始化时使用400kHz
+    rt_spi_configure(msd->spi_device, &cfg);
+    
+    // 2. SD卡初始化序列
+    // - 发送74个时钟周期
+    // - 发送CMD0进入IDLE状态
+    // - 发送CMD8检测卡版本
+    // - 发送ACMD41等待卡准备就绪
+    // - 读取CSD/CID获取卡信息
+    
+    // 3. 设置几何参数
+    msd->geometry.bytes_per_sector = 512;
+    msd->geometry.sector_count = card_capacity / 512;
+    msd->geometry.block_size = 512;
+}
+```
+
+
+
+###### 📁 3. 文件系统挂载流程
+
+```c
+// 应用层挂载文件系统
+dfs_mount("sd0", "/sd", "elm", 0, 0);
+
+// 内部流程：
+// 1. RT-Thread通过设备名"sd0"找到MSD设备
+// 2. 调用rt_device_init()初始化SD卡
+// 3. ELM FatFS通过RT-Thread设备接口访问SD卡
+```
+
+###### 📖 4. 数据读取流程
+
+应用层调用
+
+```c
+FILE *fp = fopen("/sd/test.txt", "r");  // 打开文件
+fread(buffer, 1, size, fp);             // 读取数据
+```
+
+底层调用链
+
+fread() 
+  ↓
+ELM FatFS (f_read)
+  ↓  
+RT-Thread设备框架 (rt_device_read)
+  ↓
+rt_msd_read() [MSD驱动]
+  ↓
+_send_cmd() + _read_block() [SPI命令]
+  ↓
+SPI总线驱动 (bus->ops->xfer)
+  ↓
+硬件SPI控制器
+  ↓
+SD卡硬件
+
+rt_msd_read()详细流程
+
+```c
+static rt_ssize_t rt_msd_read(rt_device_t dev, rt_off_t pos, void *buffer, rt_size_t size) {
+    // pos: 逻辑块号（由文件系统计算）
+    // size: 要读取的块数量
+    // buffer: 接收缓冲区
+    
+    // 1. 获取SPI总线所有权
+    MSD_take_owner(msd->spi_device);
+    
+    // 2. 计算物理扇区地址
+    uint32_t sector_addr = pos * msd->geometry.bytes_per_sector;
+    
+    if (size == 1) {
+        // 单块读取
+        rt_spi_take(msd->spi_device);  // 拉低CS
+        
+        // 发送CMD17读单块命令
+        _send_cmd(msd->spi_device, READ_SINGLE_BLOCK, sector_addr, 0x00, response_r1, response);
+        
+        // 读取数据块
+        _read_block(msd->spi_device, buffer, 512);
+        
+        rt_spi_release(msd->spi_device);  // 拉高CS
+    } else {
+        // 多块读取
+        // 发送CMD18读多块命令，循环读取，最后发送CMD12停止
+    }
+}
+```
+
+###### ✍️ 5. 数据写入流程
+
+应用层调用
+
+```c
+FILE *fp = fopen("/sd/test.txt", "w");  // 打开文件
+fwrite(data, 1, size, fp);              // 写入数据
+fclose(fp);                             // 关闭文件
+```
+
+rt_msd_write()详细流程
+
+```c
+static rt_ssize_t rt_msd_write(rt_device_t dev, rt_off_t pos, const void *buffer, rt_size_t size) {
+    // 1. 获取SPI总线所有权
+    MSD_take_owner(msd->spi_device);
+    
+    // 2. 计算物理扇区地址
+    uint32_t sector_addr = pos * msd->geometry.bytes_per_sector;
+    
+    if (size == 1) {
+        // 单块写入
+        rt_spi_take(msd->spi_device);
+        
+        // 发送CMD24写单块命令
+        _send_cmd(msd->spi_device, WRITE_BLOCK, sector_addr, 0x00, response_r1, response);
+        
+        // 写入数据块
+        _write_block(msd->spi_device, buffer, 512);
+        
+        rt_spi_release(msd->spi_device);
+    }
+}
+```
+
+###### 🔄 6. 关键技术细节
+
+SPI总线仲裁机制
+
+```c
+static rt_err_t MSD_take_owner(struct rt_spi_device *spi_device) {
+    // 1. 获取总线互斥锁
+    rt_mutex_take(&(spi_device->bus->lock), RT_WAITING_FOREVER);
+    
+    // 2. 检查当前总线owner
+    if (spi_device->bus->owner != spi_device) {
+        // 3. 重新配置SPI总线参数
+        result = spi_device->bus->ops->configure(spi_device, &spi_device->config);
+        
+        // 4. 设置新的owner
+        spi_device->bus->owner = spi_device;
+    }
+}
+```
+
+SD卡命令发送机制
+
+```c
+static rt_err_t _send_cmd(struct rt_spi_device *device, uint8_t cmd, uint32_t arg, ...) {
+    // 1. 构造命令包
+    cmd_buffer[0] = DUMMY;           // 起始字节
+    cmd_buffer[1] = (cmd | 0x40);    // 命令字节
+    cmd_buffer[2-5] = arg的4个字节;   // 参数（如扇区地址）
+    cmd_buffer[6] = CRC;             // CRC校验
+    cmd_buffer[7] = DUMMY;           // 结束字节
+    
+    // 2. 通过SPI发送命令
+    device->bus->ops->xfer(device, &message);
+    
+    // 3. 等待响应
+    // 循环接收直到收到有效响应（最高位为0）
+}
+```
+
+数据传输机制
+
+```c
+static rt_err_t _read_block(struct rt_spi_device *device, void *buffer, uint32_t block_size) {
+    // 1. 等待数据开始标志
+    _wait_token(device, MSD_TOKEN_READ_START);  // 等待0xFE
+    
+    // 2. 读取512字节数据
+    message.recv_buf = buffer;
+    message.length = block_size;
+    device->bus->ops->xfer(device, &message);
+    
+    // 3. 读取CRC（2字节，通常忽略）
+}
+```
+
+🎯 总结
+
+这个SPI SD卡驱动实现了完整的**分层架构**：
+
+1. **硬件层**: K210 SPI控制器
+2. **驱动层**: RT-Thread SPI总线驱动
+3. **设备层**: MSD块设备驱动（本文件）
+4. **文件系统层**: ELM FatFS
+5. **应用层**: 标准C文件操作
+
+每一层都有明确的职责分工，上层通过标准接口调用下层服务，实现了良好的模块化设计。SD卡的扇区寻址、命令发送、数据传输等复杂操作都被封装在驱动层，应用层只需要使用简单的文件操作函数即可。
+
+
+
+![image-20250807120542384](assets/image-20250807120542384.png)
 
 
 
@@ -7976,7 +10624,7 @@ int main(void)
 
 ### 1. 知识
 
-
+![image-20250804092755089](assets/image-20250804092755089.png)
 
 ⏳这是我的简历上 一个项目的源码，
 
@@ -11037,13 +13685,13 @@ while(1)
 
         rt_kprintf("PID parameters updated: Kp=%.2f, Ki=%.2f, Kd=%.2f\n", kp, ki, kd);
     }
-    ```
+```
 
 2.  **导出命令到FinSH**：
     -   然后，我需要使用RT-Thread提供的宏，将这个函数“注册”成一个FinSH命令。
     ```c
     #include <finsh.h>
-
+    
     // 使用MSH_CMD_EXPORT宏
     MSH_CMD_EXPORT(pid_tune_cmd, tune pid parameters for speed loop);
     ```
