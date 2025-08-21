@@ -6866,11 +6866,665 @@ va_arg用来获取可变参部分的参数，va_start初始化时将va_arg设置
 
 ## 基础知识
 
+### [RTT文档中心](https://www.rt-thread.org/document/site/#/rt-thread-version/rt-thread-standard/programming-manual/basic/basic)
+
+#### 内核基础
+
+##### RTT内核介绍
+
+###### 线程调度：
+
+线程是 RT-Thread 操作系统中最小的调度单位，
+
+线程调度算法是基于优先级的全抢占式多线程调度算法，即在系统中除了中断处理函数、调度器上锁部分的代码和禁止中断的代码是不可抢占的之外，系统的其他部分都是可以抢占的，包括线程调度器自身。
+
+支持 256 个线程优先级（也可通过配置文件更改为最大支持 32 个或 8 个线程优先级，针对 STM32 默认配置是 32 个线程优先级），0 优先级代表最高优先级，最低优先级留给空闲线程使用；
+
+同时它也支持创建多个具有相同优先级的线程，相同优先级的线程间采用时间片的轮转调度算法进行调度，使每个线程运行相应时间；
+
+另外调度器在寻找那些处于就绪状态的具有最高优先级的线程时，所经历的时间是恒定的，系统也不限制线程数量的多少，线程数目只和硬件平台的具体内存相关。
+
+###### 时钟管理
+
+RT-Thread 的时钟管理以时钟节拍为基础，时钟节拍是 RT-Thread 操作系统中最小的时钟单位。RT-Thread 的定时器提供两类定时器机制：第一类是单次触发定时器，这类定时器在启动后只会触发一次定时器事件，然后定时器自动停止。第二类是周期触发定时器，这类定时器会周期性的触发定时器事件，直到用户手动的停止定时器否则将永远持续执行下去。
+
+另外，根据超时函数执行时所处的上下文环境，RT-Thread 的定时器可以设置为 HARD_TIMER 模式或者 SOFT_TIMER 模式。
+
+通常使用定时器定时回调函数（即超时函数），完成定时服务。用户根据自己对定时处理的实时性要求选择合适类型的定时器。
+
+###### 线程间同步
+
+信号量  互斥量 事件集实现线程间同步；
+
+RT-Thread 采用信号量、互斥量与事件集实现线程间同步。
+
+线程通过对信号量、互斥量的获取与释放进行同步；
+
+互斥量采用优先级继承的方式解决了实时系统常见的优先级翻转问题。
+
+线程同步机制支持线程按优先级等待方式获取信号量或互斥量。
+
+线程通过对事件的发送与接收进行同步；
+
+事件集支持多事件的 “或触发” 和“与触发”，适合于线程等待多个事件的情况。
+
+###### 线程间同步
+
+RT-Thread 支持邮箱和消息队列等通信机制。邮箱中一封邮件的长度固定为 4 字节大小；消息队列能够接收不固定长度的消息，并把消息缓存在自己的内存空间中。邮箱效率较消息队列更为高效。邮箱和消息队列的发送动作可安全用于中断服务例程中。通信机制支持线程按优先级等待方式获取。
+
+###### 内存管理
+
+静态内存管理和动态内存管理：
+
+当静态内存池具有可用内存时，系统对内存块分配的时间将是恒定的；当静态内存池为空时，系统将申请内存块的线程挂起或阻塞掉 (即线程等待一段时间后仍未获得内存块就放弃申请并返回，或者立刻返回。等待的时间取决于申请内存块时设置的等待时间参数)，当其他线程释放内存块到内存池时，如果有挂起的待分配内存块的线程存在的话，则系统会将这个线程
+
+动态内存管理：动态内存堆管理模块在系统资源不同的情况下，分别提供了面向小内存系统的内存管理算法及面向大内存系统的 SLAB 内存管理算法。
+
+还有一种动态内存堆管理叫做 memheap，适用于系统含有多个地址且不连续的内存堆。使用 memheap 可以将多个内存堆 “粘贴” 在一起，让用户操作起来像是在操作一个内存堆。
+
+
+
+###### IO设备管理
+
+RT-Thread 将 PIN、I2C、SPI、USB、UART 等作为外设设备，统一通过设备注册完成。实现了按名称访问的设备管理子系统，可按照统一的 API 界面访问硬件设备。在设备驱动接口上，根据嵌入式系统的特点，对不同的设备可以挂接相应的事件。当设备事件触发时，由驱动程序通知给上层的应用程序。
+
+##### RTT的启动流程
+
+而 rtthread_startup() 函数是 RT-Thread 规定的统一启动入口。一般执行顺序是：系统先从启动文件开始运行，然后进入 RT-Thread 的启动函数 rtthread_startup() ，最后进入用户入口函数 main()，如下图所示：
+
+![image-20250814190741971](assets/image-20250814190741971.png)
+
+```c
+int rtthread_startup(void)
+{
+    rt_hw_interrupt_disable();
+
+    /* 板级初始化：需在该函数内部进行系统堆的初始化 */
+    rt_hw_board_init();
+
+    /* 打印 RT-Thread 版本信息 */
+    rt_show_version();
+
+    /* 定时器初始化 */
+    rt_system_timer_init();
+
+    /* 调度器初始化 */
+    rt_system_scheduler_init();
+
+#ifdef RT_USING_SIGNALS
+    /* 信号初始化 */
+    rt_system_signal_init();
+#endif
+
+    /* 由此创建一个用户 main 线程 */
+    rt_application_init();
+
+    /* 定时器线程初始化 */
+    rt_system_timer_thread_init();
+
+    /* 空闲线程初始化 */
+    rt_thread_idle_init();
+
+    /* 启动调度器 */
+    rt_system_scheduler_start();
+
+    /* 不会执行至此 */
+    return 0;
+}
+
+```
+
+![image-20250814191525618](assets/image-20250814191525618.png)
+
+在启动调度器之前，所有创建的线程在执行rr_thread_startup（）之后并不会立马执行，他们会处于就绪状态等待系统调度；待启动调度器之后，系统此转入第一个线程开始运行，根据调度规则，选择就绪列表中优先级最高的线程。
+
+![image-20250814191819129](assets/image-20250814191819129.png)
+
+##### RTT程序内存分布
+
+一般MCU包含的存储空间有：片内Flash与片内RAM；
+
+
+
+![image-20250814192048622](assets/image-20250814192048622.png)![image-20250814192314147](assets/image-20250814192314147.png)
+
+![image-20250814195100968](assets/image-20250814195100968.png)
+
+![image-20250814201429513](assets/image-20250814201429513.png)
+
+##### RTT自动给初始化机制
+
+定义时通过宏定义声明，就会在系统启动过程中被执行
+
+![image-20250814202511589](assets/image-20250814202511589.png)
+
+![image-20250814202629512](assets/image-20250814202629512.png)
+
+![image-20250814202719774](assets/image-20250814202719774.png)
+
+![image-20250814203126029](assets/image-20250814203126029.png)
+
+![image-20250814203221313](assets/image-20250814203221313.png)
+
+![image-20250814203600517](assets/image-20250814203600517.png)
+
+##### RTT内核对象模型
+
+
+
+![image-20250814205129482](assets/image-20250814205129482.png)
+
+
+
+##### 内核对象管理架构
+
+![image-20250814210325865](assets/image-20250814210325865.png)
+
+### 线程管理
+
+![image-20250814212309533](assets/image-20250814212309533.png)
+
+#### 线程管理的功能特点
+
+![image-20250814212659138](assets/image-20250814212659138.png)
+
+![image-20250814213226257](assets/image-20250814213226257.png)
+
+#### 线程的工作机制
+
+##### 线程控制块
+
+
+
+![image-20250814213425913](assets/image-20250814213425913.png)
+
+```c
+/* 线程控制块 */
+struct rt_thread
+{
+    /* rt 对象 */
+    char        name[RT_NAME_MAX];     /* 线程名称 */
+    rt_uint8_t  type;                   /* 对象类型 */
+    rt_uint8_t  flags;                  /* 标志位 */
+
+    rt_list_t   list;                   /* 对象列表 */
+    rt_list_t   tlist;                  /* 线程列表 */
+
+    /* 栈指针与入口指针 */
+    void       *sp;                      /* 栈指针 */
+    void       *entry;                   /* 入口函数指针 */
+    void       *parameter;              /* 参数 */
+    void       *stack_addr;             /* 栈地址指针 */
+    rt_uint32_t stack_size;            /* 栈大小 */
+
+    /* 错误代码 */
+    rt_err_t    error;                  /* 线程错误代码 */
+    rt_uint8_t  stat;                   /* 线程状态 */
+
+    /* 优先级 */
+    rt_uint8_t  current_priority;    /* 当前优先级 */
+    rt_uint8_t  init_priority;        /* 初始优先级 */
+    rt_uint32_t number_mask;
+
+    ......
+
+    rt_ubase_t  init_tick;               /* 线程初始化计数值 */
+    rt_ubase_t  remaining_tick;         /* 线程剩余计数值 */
+
+    struct rt_timer thread_timer;      /* 内置线程定时器 */
+
+    void (*cleanup)(struct rt_thread *tid);  /* 线程退出清除函数 */
+    rt_uint32_t user_data;                      /* 用户数据 */
+};
+
+```
+
+![image-20250814213934465](assets/image-20250814213934465.png)
+
+#### 线程重要属性
+
+##### 线程栈
+
+![image-20250814214037547](assets/image-20250814214037547.png)
+
+![image-20250814214340647](assets/image-20250814214340647.png)
+
+![image-20250814214419812](assets/image-20250814214419812.png)
+
+![image-20250814214528305](assets/image-20250814214528305.png)
+
+![image-20250814214633174](assets/image-20250814214633174.png)
+
+#### 线程状态
+
+![image-20250814214942995](assets/image-20250814214942995.png)
+
+
+
+![image-20250814215038507](assets/image-20250814215038507-1755179441682-1.png)
+
+#### 线程优先级
+
+
+
+![image-20250814215153144](assets/image-20250814215153144.png)
+
+#### 时间片
+
+![image-20250814215241861](assets/image-20250814215241861.png)
+
+#### 线程的入口函数
+
+
+
+![image-20250814215351208](assets/image-20250814215351208.png)
+
+#### 线程错误码
+
+![image-20250814215546276](assets/image-20250814215546276.png)
+
+#### 线程状态切换
+
+![image-20250814220012525](assets/image-20250814220012525.png)
+
+![image-20250814220202633](assets/image-20250814220202633.png)
+
+![image-20250814220333795](assets/image-20250814220333795.png)
+
+#### 系统线程
+
+![image-20250814220655154](assets/image-20250814220655154.png)
+
+![image-20250814220950756](assets/image-20250814220950756.png)
+
+![image-20250814221044176](assets/image-20250814221044176.png)
+
+#### 线程的管理方式
+
+![image-20250814221313411](assets/image-20250814221313411.png)
+
+![image-20250814221517230](assets/image-20250814221517230.png)
+
+![image-20250814222227651](assets/image-20250814222227651.png)
+
+#### 初始化和脱离
+
+![image-20250814222526563](assets/image-20250814222526563.png)
+
+![image-20250814222707627](assets/image-20250814222707627.png)
+
+![image-20250814222736442](assets/image-20250814222736442.png)
+
+#### 启动线程
+
+![image-20250814223354180](assets/image-20250814223354180.png)
+
+![image-20250814224854475](assets/image-20250814224854475.png)
+
+#### 获得当前线程
+
+![image-20250814225004359](assets/image-20250814225004359-1755183006486-3.png)
+
+#### 使线程出处理器资源
+
+![image-20250814225736776](assets/image-20250814225736776.png)
+
+![image-20250814231847793](assets/image-20250814231847793.png)
+
+![image-20250814232004611](assets/image-20250814232004611.png)
+
+![image-20250814232055612](assets/image-20250814232055612.png)
+
+32个就绪队列，每次切换出去把自己加入到自己原来的队列的末尾。 注意yeild的使用方法。（时间片剩余=init）
+
+但是高优先级切换时时间片是不会重新初始化的，还是剩余。
+
+yeild的调用  首先上锁（关中断）切换状态 yeild然后开中断  调用schedule();
+
+
+
+![image-20250814233130757](assets/image-20250814233130757.png)
+
+
+
+#### 使线程睡眠
+
+![image-20250814232138052](assets/image-20250814232138052.png)
+
+```c
+
+rt_err_t rt_thread_sleep(rt_tick_t tick);
+rt_err_t rt_thread_delay(rt_tick_t tick);
+rt_err_t rt_thread_mdelay(rt_int32_t ms);
+
+```
+
+
+
+
+
+![image-20250815000232001](assets/image-20250815000232001.png)
+
+#### 挂起和恢复线程
+
+### 时钟管理
+
+![image-20250815103410157](assets/image-20250815103410157.png)
+
+```c
+#include <board.h>
+void rt_hw_us_delay(rt_uint32_t us)
+{
+    rt_uint32_t ticks;
+    rt_uint32_t told, tnow, tcnt = 0;
+    rt_uint32_t reload = SysTick->LOAD;
+
+    /* 获得延时经过的 tick 数 */
+    ticks = us * reload / (1000000 / RT_TICK_PER_SECOND);
+    /* 获得当前时间 */
+    told = SysTick->VAL;
+    while (1)
+    {
+        /* 循环获得当前时间，直到达到指定的时间后退出循环 */
+        tnow = SysTick->VAL;
+        if (tnow != told)
+        {
+            if (tnow < told)
+            {
+                tcnt += told - tnow;
+            }
+            else
+            {
+                tcnt += reload - tnow + told;
+            }
+            told = tnow;
+            if (tcnt >= ticks)
+            {
+                break;
+            }
+        }
+    }
+}
+
+```
+
+
+
+![image-20250815103545462](assets/image-20250815103545462.png)
+
+
+
+### 线程间同步
+
+
+
+![image-20250815103709188](assets/image-20250815103709188.png)![image-20250815103759134](assets/image-20250815103759134.png)
+
+
+
+![image-20250815103855364](assets/image-20250815103855364.png)
+
+![image-20250815103956715](assets/image-20250815103956715.png)
+
+![image-20250815110835258](assets/image-20250815110835258.png)这条指令会把标志寄存器的 I 位清零，也就是**禁止所有可屏蔽中断**。
+
+临界区关闭所有可屏蔽中断
+
+#### 信号量
+
+![image-20250815111123731](assets/image-20250815111123731.png)
+
+##### 信号量控制块
+
+
+
+![image-20250815111251207](assets/image-20250815111251207.png)
+
+![image-20250815111304560](assets/image-20250815111304560.png)
+
+##### 信号量管理方式
+
+
+
+![image-20250815111459578](assets/image-20250815111459578.png)
+
+
+
+![image-20250815111618373](assets/image-20250815111618373.png)
+
+
+
+![image-20250815111718652](assets/image-20250815111718652.png)
+
+
+
+![image-20250815111752871](assets/image-20250815111752871.png)
+
+#### 初始化和脱离
+
+
+
+![image-20250815111906954](assets/image-20250815111906954.png)
+
+![image-20250815111939464](assets/image-20250815111939464.png)
+
+
+
+![image-20250815112020645](assets/image-20250815112020645.png)
+
+
+
+![image-20250815112040715](assets/image-20250815112040715.png)![image-20250815112112899](assets/image-20250815112112899.png)
+
+#### 互斥量
+
+互斥量只能由持有的线程释放，信号量是任意线程；
+
+持有互斥量的线程可以再次持有锁（递归）；二值信号量递归会发生主动挂起；
+
+
+
+![image-20250815112743842](assets/image-20250815112743842.png)
+
+![image-20250815113221874](assets/image-20250815113221874.png)
+
+
+
+![image-20250815113431590](assets/image-20250815113431590.png)
+
+![image-20250815113514884](assets/image-20250815113514884.png)
+
+互斥量控制块
+
+![image-20250815114023137](assets/image-20250815114023137.png)
+
+
+
+![image-20250815114035996](assets/image-20250815114035996.png)
+
+![image-20250815114100179](assets/image-20250815114100179.png)
+
+
+
+![image-20250815114223734](assets/image-20250815114223734.png)
+
+
+
+![image-20250815114355080](assets/image-20250815114355080.png)
+
+
+
+![image-20250815114523236](assets/image-20250815114523236.png)![image-20250815114635669](assets/image-20250815114635669.png)
+
+![image-20250815114721925](assets/image-20250815114721925.png)
+
+#### 事件集
+
+![image-20250815114944813](assets/image-20250815114944813.png)
+
+![image-20250815115051324](assets/image-20250815115051324.png)
+
+![image-20250815124004389](assets/image-20250815124004389.png)
+
+![image-20250815124112024](assets/image-20250815124112024.png)
+
+
+
+![image-20250815124206464](assets/image-20250815124206464.png)
+
+### 内存管理
+
+
+
+![image-20250815124544740](assets/image-20250815124544740.png)
+
+#### 内存堆管理
+
+一段连续的内存空间
+
+![image-20250815124719333](assets/image-20250815124719333.png)![image-20250815124826894](assets/image-20250815124826894.png)![image-20250815124915975](assets/image-20250815124915975.png)
+
+
+
+![image-20250815131423979](assets/image-20250815131423979-1755234865289-7.png)
+
+![image-20250815131825138](assets/image-20250815131825138.png)
+
+![image-20250815132153205](assets/image-20250815132153205.png)
+
+### 中断管理
+
+![image-20250815135400093](assets/image-20250815135400093.png)
+
+![image-20250815135835646](assets/image-20250815135835646.png)
+
+
+
+![image-20250815135909917](assets/image-20250815135909917.png)
+
+
+
+![image-20250815140020859](assets/image-20250815140020859.png)
+
+![image-20250815140119379](assets/image-20250815140119379.png)
+
+![image-20250815140550534](assets/image-20250815140550534.png)
+
+
+
+![image-20250815140327686](assets/image-20250815140327686.png)
+
+
+
+![image-20250815140723674](assets/image-20250815140723674.png)
+
+##### PendSV系统调用
+
+
+
+![image-20250815140847054](assets/image-20250815140847054.png)
+
+![image-20250815141035770](assets/image-20250815141035770.png)
+
+```c
+  __Vectors     DCD     __initial_sp             ; Top of Stack
+                DCD     Reset_Handler            ; Reset 处理函数
+                DCD     NMI_Handler              ; NMI 处理函数
+                DCD     HardFault_Handler        ; Hard Fault 处理函数
+                DCD     MemManage_Handler        ; MPU Fault 处理函数
+                DCD     BusFault_Handler         ; Bus Fault 处理函数
+                DCD     UsageFault_Handler       ; Usage Fault 处理函数
+                DCD     0                        ; 保留
+                DCD     0                        ; 保留
+                DCD     0                        ; 保留
+                DCD     0                        ; 保留
+                DCD     SVC_Handler              ; SVCall 处理函数
+                DCD     DebugMon_Handler         ; Debug Monitor 处理函数
+                DCD     0                        ; 保留
+                DCD     PendSV_Handler           ; PendSV 处理函数
+                DCD     SysTick_Handler          ; SysTick 处理函数
+
+… …
+
+NMI_Handler             PROC
+                EXPORT NMI_Handler              [WEAK]
+                B       .
+                ENDP
+HardFault_Handler       PROC
+                EXPORT HardFault_Handler        [WEAK]
+                B       .
+                ENDP
+… …
+
+```
+
+
+
+![image-20250815141323159](assets/image-20250815141323159.png)
+
+
+
+![image-20250815141357911](assets/image-20250815141357911.png)
+
+
+
+![image-20250815141543434](assets/image-20250815141543434.png)
+
+
+
+![image-20250815141835597](assets/image-20250815141835597.png)
+
+
+
+![image-20250815141914013](assets/image-20250815141914013.png)
+
+![image-20250815142047856](assets/image-20250815142047856.png)
+
+![image-20250815142354829](assets/image-20250815142354829.png)
+
+![image-20250815142516346](assets/image-20250815142516346.png)
+
+![image-20250815142822880](assets/image-20250815142822880.png)
+
+
+
+![image-20250815143142864](assets/image-20250815143142864.png)
+
+
+
+![image-20250815143329921](assets/image-20250815143329921.png)
+
+![image-20250815143441110](assets/image-20250815143441110.png)
+
+
+
+![image-20250815143513549](assets/image-20250815143513549.png)
+
+
+
+![image-20250815143634669](assets/image-20250815143634669.png)
+
+
+
+
+
+![image-20250815143715736](assets/image-20250815143715736.png)
+
+![image-20250815144035267](assets/image-20250815144035267.png)
+
+
+
+
+
 ### 第一章 RT-Thread概述与体验
 
 #### 1.1 RTT目录结构
 
 bsp (单板相关)
+
+```
+
+```
 
 components (各类组件，比如finsh命令终端)
 
@@ -13510,6 +14164,13 @@ int dma_irq_callback(void **ctx*)
   }
 
 }![image-20250808110307916](assets/image-20250808110307916.png)
+
+#### 30 、如何理解堆和栈
+
+ 栈：编译器与 CPU 自动管理，函数调用帧、局部变量、返回地址、部分寄存器现场。先进后出，连续内存，高速。
+堆：程序运行时动态分配（malloc/rt_malloc），手动管理，碎片化风险，分配/释放耗时更高。
+
+#### 31、 在裸机或者RTOS中，有什么比较快速的方法去精确确定一个任务或者整个系统里面栈的 最大使用深度 是多少，如何运行一段时间后查看栈用了多少？
 
 
 
@@ -21987,7 +22648,7 @@ https://blog.csdn.net/qq_29350001/article/details/116021595
 
    3. 调用_libc_init_array()  使用C/C++标准库
 
-      ​	初始化初始化全局变量、堆栈、堆等，确保C语言程序环境的准备
+      ​	确保C语言程序环境的准备
 
    4. 调用 `main()` 函数
 
