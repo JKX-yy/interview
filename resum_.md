@@ -18309,7 +18309,7 @@ target_link_libraries(main mathlib)  # 链接子目录里的库
 子目录 `math/CMakeLists.txt`
 
 ```
-cmakeCopyEditadd_library(mathlib add.cpp)
+add_library(mathlib add.cpp)
 target_include_directories(mathlib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 ```
 
